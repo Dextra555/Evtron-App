@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -69,6 +70,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   bool _authDialogVisible = false;
 
   Timer? _controllerUpdateDebounce;
+  StreamSubscription? _connectivitySubscription;
 
   @override
   void initState() {
@@ -84,6 +86,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _checkAndRequestPermission();
     _listenToLocationServices();
     _checkForActiveSessionOnInit();
+
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((results) {
+      final hasConnection = results.any((r) => r != ConnectivityResult.none);
+      if (hasConnection && mounted && !_isLoading) {
+        _fetchEVStations();
+      }
+    });
   }
 
   void _onChargingControllerUpdate() {
@@ -99,6 +108,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     _controllerUpdateDebounce?.cancel();
+    _connectivitySubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     if (_mapController != null) {
       _mapController!.dispose();

@@ -16,6 +16,8 @@ import '../../Service/invoice_service.dart';
 import '../../Theme/colors.dart';
 import 'invoice_bottom_sheet.dart';
 import 'charging_progress_page_utils.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import '../Home/mapui.dart';
 
 class ChargingProgressPage extends StatefulWidget {
   final Map<String, dynamic>? chargingDetails;
@@ -26,9 +28,11 @@ class ChargingProgressPage extends StatefulWidget {
   State<ChargingProgressPage> createState() => _ChargingProgressPageState();
 }
 
-class _ChargingProgressPageState extends State<ChargingProgressPage> with WidgetsBindingObserver {
+class _ChargingProgressPageState extends State<ChargingProgressPage>
+    with WidgetsBindingObserver {
   late LiveChargingController _liveChargingController;
-  final StopChargingController _stopChargingController = StopChargingController();
+  final StopChargingController _stopChargingController =
+      StopChargingController();
   final InvoiceController _invoiceController = InvoiceController();
 
   Timer? _durationTimer;
@@ -36,12 +40,17 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
   Timer? _refreshTimer;
   Duration _currentDuration = Duration.zero;
   DateTime? _sessionStartTime;
+  Duration _elapsedBaseDuration = Duration.zero;
+  DateTime? _lastElapsedUpdateTime;
   String _vehicleName = "";
   String _registrationNumber = "";
   bool _isSessionCompleted = false;
   bool _isRecovering = false;
   bool _isLoadingDialogShowing = false;
   bool _isInvoiceSheetShowing = false;
+  bool _isHandlingNetworkInterruption = false;
+  bool _retryLoopActive = false;
+  StreamSubscription? _connectivitySubscription;
 
   int? _currentSessionId;
   bool _isLoading = false;
@@ -139,7 +148,8 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
       final prefs = await SharedPreferences.getInstance();
 
       // Get session ID
-      int? sessionId = widget.chargingDetails?['sessionId'] ??
+      int? sessionId =
+          widget.chargingDetails?['sessionId'] ??
           prefs.getInt('active_session_id') ??
           prefs.getInt('session_id');
 
@@ -148,8 +158,10 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
 
       // ✅ 1. Try session-specific vehicle details first (most reliable)
       if (sessionId != null && sessionId > 0) {
-        vehicleName = prefs.getString('session_${sessionId}_vehicle_name') ?? '';
-        registration = prefs.getString('session_${sessionId}_vehicle_registration') ?? '';
+        vehicleName =
+            prefs.getString('session_${sessionId}_vehicle_name') ?? '';
+        registration =
+            prefs.getString('session_${sessionId}_vehicle_registration') ?? '';
       }
 
       // ✅ 2. Fallback to generic vehicle details
@@ -160,11 +172,15 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
 
       // ✅ 3. Fallback to widget details
       if (vehicleName == 'Unknown Vehicle' && widget.chargingDetails != null) {
-        final widgetName = widget.chargingDetails!['vehicleName']?.toString() ?? '';
-        final widgetRegistration = widget.chargingDetails!['registrationNumber']?.toString() ?? '';
+        final widgetName =
+            widget.chargingDetails!['vehicleName']?.toString() ?? '';
+        final widgetRegistration =
+            widget.chargingDetails!['registrationNumber']?.toString() ?? '';
         if (widgetName.isNotEmpty) {
           vehicleName = widgetName;
-          registration = widgetRegistration.isNotEmpty ? widgetRegistration : 'N/A';
+          registration = widgetRegistration.isNotEmpty
+              ? widgetRegistration
+              : 'N/A';
         }
       }
 
@@ -177,7 +193,6 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
       print('   Vehicle: $vehicleName');
       print('   Registration: $registration');
       print('   Session ID: ${sessionId ?? 'null'}');
-
     } catch (e) {
       print('⚠️ Error loading vehicle details from storage: $e');
     }
@@ -202,15 +217,20 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
 
       // ✅ Save session-specific vehicle details (keyed by session ID)
       await prefs.setString('session_${sessionId}_vehicle_name', vehicleName);
-      await prefs.setString('session_${sessionId}_vehicle_registration', registrationNumber);
-      await prefs.setString('session_${sessionId}_vehicle_manufacturer', manufacturer);
+      await prefs.setString(
+        'session_${sessionId}_vehicle_registration',
+        registrationNumber,
+      );
+      await prefs.setString(
+        'session_${sessionId}_vehicle_manufacturer',
+        manufacturer,
+      );
       await prefs.setString('session_${sessionId}_vehicle_model', model);
 
       print('✅ Vehicle details saved to storage:');
       print('   Session ID: $sessionId');
       print('   Vehicle: $vehicleName');
       print('   Registration: $registrationNumber');
-
     } catch (e) {
       print('❌ Error saving vehicle details: $e');
     }
@@ -243,9 +263,12 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
     // ✅ If widget has vehicle details, save them to storage
     if (widget.chargingDetails != null) {
       final sessionId = widget.chargingDetails!['sessionId'];
-      final vehicleName = widget.chargingDetails!['vehicleName']?.toString() ?? '';
-      final registration = widget.chargingDetails!['registrationNumber']?.toString() ?? '';
-      final manufacturer = widget.chargingDetails!['manufacturer']?.toString() ?? '';
+      final vehicleName =
+          widget.chargingDetails!['vehicleName']?.toString() ?? '';
+      final registration =
+          widget.chargingDetails!['registrationNumber']?.toString() ?? '';
+      final manufacturer =
+          widget.chargingDetails!['manufacturer']?.toString() ?? '';
       final model = widget.chargingDetails!['model']?.toString() ?? '';
 
       if (sessionId != null && sessionId > 0 && vehicleName.isNotEmpty) {
@@ -278,6 +301,32 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
     _liveChargingController.addListener(_onControllerUpdate);
     _startDurationTimer();
     _startAutoRefreshTimer();
+
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      results,
+    ) {
+      final hasConnection = results.any((r) => r != ConnectivityResult.none);
+      print('📡 Connectivity changed: hasConnection=$hasConnection');
+      if (hasConnection && _isMounted && mounted && !_isSessionCompleted) {
+        _liveChargingController.resetNetworkFailures();
+
+        if (_retryLoopActive) {
+          print(
+            '📡 Internet returned during retry loop - dismissing dialog and checking session',
+          );
+          _retryLoopActive = false;
+          _hideLoadingDialog();
+          _isHandlingNetworkInterruption = false;
+          _checkSessionAndRecoverWithRetries();
+          return;
+        }
+
+        if (_currentSessionId != null) {
+          print('📡 Re-fetching after connectivity change');
+          _liveChargingController.startPolling(sessionId: _currentSessionId);
+        }
+      }
+    });
   }
 
   void _initializeSession(int? sessionId) {
@@ -300,9 +349,15 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
       case AppLifecycleState.resumed:
         print('📱 App resumed - refreshing charging status');
         if (_currentSessionId != null && !_isSessionCompleted) {
-          _liveChargingController.fetchLiveChargingStatus(
-            sessionId: _currentSessionId,
-          );
+          if (_liveChargingController.pollingStoppedByNetwork) {
+            print('📱 App resumed with stopped polling - restarting');
+            _liveChargingController.resetNetworkFailures();
+            _liveChargingController.startPolling(sessionId: _currentSessionId);
+          } else {
+            _liveChargingController.fetchLiveChargingStatus(
+              sessionId: _currentSessionId,
+            );
+          }
         }
         break;
       case AppLifecycleState.inactive:
@@ -363,7 +418,10 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
                 ),
                 const SizedBox(height: 16),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(8),
@@ -373,7 +431,11 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.info_outline, size: 14, color: Colors.grey.shade600),
+                          Icon(
+                            Icons.info_outline,
+                            size: 14,
+                            color: Colors.grey.shade600,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             "This may take a few moments",
@@ -465,18 +527,12 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
                 SizedBox(height: 16),
                 Text(
                   'Generating invoice...',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                 ),
                 SizedBox(height: 8),
                 Text(
                   'Please wait while we prepare your invoice',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
                 ),
               ],
             ),
@@ -527,32 +583,126 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
     });
   }
 
-  void _scheduleInvoiceAfterInterruption({String? message}) {
-    if (!_isMounted || _isSessionCompleted) return;
+  void _showNetworkInterruptedDialog() {
+    if (_isLoadingDialogShowing || !_isMounted || !mounted) return;
 
-    _isSessionCompleted = true;
+    _isLoadingDialogShowing = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Network Interrupted',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Appcolor.black,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Waiting for connection to recover...',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'We will recheck the charging session once the internet is back.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleNetworkInterruptionAndRetry() async {
+    if (!_isMounted || !mounted || _isHandlingNetworkInterruption) return;
+    _isHandlingNetworkInterruption = true;
+    _retryLoopActive = true;
+
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
     _durationTimer?.cancel();
     _liveChargingController.stopPolling();
     stopPolling();
     _hideLoadingDialog();
+    _showNetworkInterruptedDialog();
 
-    if (_isMounted && message != null && message.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+    final deadline = DateTime.now().add(const Duration(seconds: 30));
+    int attempt = 0;
+
+    while (DateTime.now().isBefore(deadline) &&
+        !_isSessionCompleted &&
+        _retryLoopActive &&
+        _isMounted &&
+        mounted) {
+      attempt++;
+
+      // Check connectivity every attempt (fast, ~50ms)
+      try {
+        final results = await Connectivity().checkConnectivity();
+        final hasConnection = results.any((r) => r != ConnectivityResult.none);
+
+        if (hasConnection) {
+          print('📡 Retry attempt $attempt: network is back! Recovering...');
+          _retryLoopActive = false;
+          _hideLoadingDialog();
+          _isHandlingNetworkInterruption = false;
+          await _checkSessionAndRecoverWithRetries();
+          return;
+        }
+      } catch (e) {
+        print('⚠️ Connectivity check error on attempt $attempt: $e');
+      }
+
+      await Future.delayed(const Duration(seconds: 3));
     }
 
-    Future.delayed(const Duration(seconds: 12), () {
-      if (!_isMounted || !mounted || _isInvoiceSheetShowing) return;
-      _showInvoiceBottomSheet();
-    });
+    if (!_isMounted || !mounted) {
+      _retryLoopActive = false;
+      _isHandlingNetworkInterruption = false;
+      return;
+    }
+
+    _retryLoopActive = false;
+    _hideLoadingDialog();
+
+    if (_isMounted && mounted) {
+      print('📡 Retry loop expired - navigating to map');
+      _navigateToMapScreen();
+    }
+    _isHandlingNetworkInterruption = false;
   }
 
-  Future<void> _fetchInvoiceData({int maxRetries = 10, int retryDelaySeconds = 2}) async {
+
+  Future<void> _fetchInvoiceData({
+    int maxRetries = 10,
+    int retryDelaySeconds = 2,
+  }) async {
     try {
       // Get session ID from multiple sources
       int? sessionId = _currentSessionId;
@@ -594,20 +744,28 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
 
           if (success && _invoiceController.invoiceResponse != null) {
             print('✅ Invoice fetched successfully');
-            print('   Invoice #: ${_invoiceController.invoiceResponse?.data.invoiceNumber}');
-            print('   Total: ${_invoiceController.invoiceResponse?.data.billing.total}');
+            print(
+              '   Invoice #: ${_invoiceController.invoiceResponse?.data.invoiceNumber}',
+            );
+            print(
+              '   Total: ${_invoiceController.invoiceResponse?.data.billing.total}',
+            );
             break;
           }
 
           final errorMsg = _invoiceController.errorMessage ?? '';
           if (InvoiceService.shouldRetryInvoiceRequest(errorMsg)) {
             retryCount++;
-            print('⏳ Session not completed yet, retrying in ${retryDelaySeconds}s... (Attempt $retryCount/$maxRetries)');
+            print(
+              '⏳ Session not completed yet, retrying in ${retryDelaySeconds}s... (Attempt $retryCount/$maxRetries)',
+            );
 
             if (_isMounted && retryCount <= maxRetries) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Waiting for session to complete... ($retryCount/$maxRetries)'),
+                  content: Text(
+                    'Waiting for session to complete... ($retryCount/$maxRetries)',
+                  ),
                   backgroundColor: Colors.orange,
                   duration: Duration(seconds: retryDelaySeconds),
                 ),
@@ -616,7 +774,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
 
             await Future.delayed(Duration(seconds: retryDelaySeconds));
           } else {
-            print('⚠️ Failed to fetch invoice: ${_invoiceController.errorMessage}');
+            print(
+              '⚠️ Failed to fetch invoice: ${_invoiceController.errorMessage}',
+            );
             break;
           }
         } catch (e) {
@@ -637,7 +797,6 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
           ),
         );
       }
-
     } catch (e) {
       print('❌ Error fetching invoice: $e');
     }
@@ -690,7 +849,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
         final liveData = _liveChargingController.currentLiveData!;
 
         if (liveData.sessionId != sessionId) {
-          print('⚠️ Session mismatch: expected $sessionId, got ${liveData.sessionId}');
+          print(
+            '⚠️ Session mismatch: expected $sessionId, got ${liveData.sessionId}',
+          );
           _recoverAndStartPolling();
           return;
         }
@@ -707,7 +868,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
           if (vehicleName.isNotEmpty) {
             setState(() {
               _vehicleName = vehicleName;
-              _registrationNumber = registration.isNotEmpty ? registration : 'N/A';
+              _registrationNumber = registration.isNotEmpty
+                  ? registration
+                  : 'N/A';
             });
 
             // ✅ Save to storage for persistence
@@ -819,7 +982,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
 
         if (retryCount % 3 == 0) {
           _updateLoadingDialogMessage(
-              'Waiting for charger response... (${(retryCount + 1) * 3}s)'
+            'Waiting for charger response... (${(retryCount + 1) * 3}s)',
           );
         }
 
@@ -852,25 +1015,18 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
             });
             return;
           } else {
-            print('⏳ Session is in terminal state: ${liveData.status}, retrying...');
+            print(
+              '⏳ Session is in terminal state: ${liveData.status}, retrying...',
+            );
           }
         }
         retryCount++;
       }
 
       if (!foundActiveSession && _isMounted) {
-        print('❌ No active session found after polling');
+        print('❌ No active session found after polling - navigating to map');
         _hideLoadingDialog();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Charger did not start. Please check the charger status.'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 3),
-          ),
-        );
-
-        _scheduleNavigationToScanner();
+        _navigateToMapScreen();
       }
     } catch (e) {
       print('❌ Error recovering session: $e');
@@ -914,8 +1070,70 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => const ScannerPage()),
-          (route) => false,
+      (route) => false,
     );
+  }
+
+  void _navigateToMapScreen() {
+    if (!_isMounted) return;
+    _clearSessionData();
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const MapScreen()),
+      (route) => false,
+    );
+  }
+
+  Future<void> _checkSessionAndRecoverWithRetries() async {
+    if (!_isMounted || !mounted) return;
+
+    int? sessionId =
+        _currentSessionId ??
+        widget.chargingDetails?['sessionId'] ??
+        _liveChargingController.currentSessionId;
+
+    if (sessionId == null || sessionId <= 0) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        sessionId =
+            prefs.getInt('active_session_id') ?? prefs.getInt('session_id');
+      } catch (_) {}
+    }
+
+    if (sessionId != null && sessionId > 0) {
+      for (int i = 0; i < 5; i++) {
+        if (!_isMounted || !mounted) return;
+
+        print('📡 Session recovery attempt ${i + 1}/5 for session $sessionId');
+        final success = await _liveChargingController.fetchLiveChargingStatus(
+          sessionId: sessionId,
+        );
+
+        if (!_isMounted || !mounted) return;
+
+        if (success && _liveChargingController.currentLiveData != null) {
+          final liveData = _liveChargingController.currentLiveData!;
+          if (liveData.isCompleted || liveData.hasError) {
+            print('🔴 Session completed/errored after network recovery');
+            _isSessionCompleted = true;
+            _showInvoiceBottomSheet();
+          } else {
+            print('✅ Active session recovered: $sessionId');
+            _startPolling(sessionId);
+          }
+          return;
+        }
+
+        if (i < 4) {
+          await Future.delayed(const Duration(seconds: 2));
+        }
+      }
+    }
+
+    if (_isMounted && mounted) {
+      print('📡 No active session found after recovery - navigating to map');
+      _navigateToMapScreen();
+    }
   }
 
   void _startAutoRefreshTimer() {
@@ -928,8 +1146,15 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
         return;
       }
 
+      if (_retryLoopActive || _isHandlingNetworkInterruption) {
+        _refreshTimer?.cancel();
+        _refreshTimer = null;
+        return;
+      }
+
       final liveData = _liveChargingController.currentLiveData;
-      final shouldRefresh = liveData == null ||
+      final shouldRefresh =
+          liveData == null ||
           liveData.isCharging ||
           liveData.isPreparing ||
           liveData.isSuspended ||
@@ -941,7 +1166,8 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
         return;
       }
 
-      final sessionId = _currentSessionId ??
+      final sessionId =
+          _currentSessionId ??
           widget.chargingDetails?['sessionId'] ??
           _liveChargingController.currentSessionId;
 
@@ -950,7 +1176,29 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
       }
 
       print('🔄 Auto-refreshing charging data every 10 seconds');
-      await _liveChargingController.fetchLiveChargingStatus(sessionId: sessionId);
+      final success = await _liveChargingController.fetchLiveChargingStatus(
+        sessionId: sessionId,
+      );
+
+      if (!success && _isMounted && mounted && !_isHandlingNetworkInterruption && !_retryLoopActive) {
+        final errorMsg = (_liveChargingController.errorMessage ?? '').toLowerCase();
+        final isNetworkIssue =
+            errorMsg.contains('network') ||
+            errorMsg.contains('socket') ||
+            errorMsg.contains('connection') ||
+            errorMsg.contains('timeout') ||
+            errorMsg.contains('internet') ||
+            errorMsg.isEmpty;
+
+        if (isNetworkIssue) {
+          print('📡 Auto-refresh detected network failure - triggering recovery');
+          _refreshTimer?.cancel();
+          _refreshTimer = null;
+          unawaited(_handleNetworkInterruptionAndRetry());
+          return;
+        }
+      }
+
       if (mounted) {
         setState(() {});
       }
@@ -969,10 +1217,19 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
     print('🔄 ChargingProgressPage: Controller updated');
 
     if (_liveChargingController.isNoActiveSession && _isMounted) {
-      print('⚠️ No active session detected - delaying invoice generation briefly');
-      _scheduleInvoiceAfterInterruption(
-        message: 'Connection interrupted. Preparing invoice in a moment...',
-      );
+      print('⚠️ No active session detected - waiting before rechecking');
+      unawaited(_handleNetworkInterruptionAndRetry());
+      return;
+    }
+
+    if (_liveChargingController.pollingStoppedByNetwork &&
+        _isMounted &&
+        !_isSessionCompleted &&
+        !_isHandlingNetworkInterruption) {
+      print('📡 Polling stopped by network failures - triggering recovery');
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+      unawaited(_handleNetworkInterruptionAndRetry());
       return;
     }
 
@@ -999,8 +1256,10 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
         return;
       }
 
-      final errorMessage = (_liveChargingController.errorMessage ?? '').toLowerCase();
-      final isConnectionIssue = errorMessage.contains('network') ||
+      final errorMessage = (_liveChargingController.errorMessage ?? '')
+          .toLowerCase();
+      final isConnectionIssue =
+          errorMessage.contains('network') ||
           errorMessage.contains('socket') ||
           errorMessage.contains('connection') ||
           errorMessage.contains('timeout') ||
@@ -1009,9 +1268,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
       print('❌ Session error: ${_liveChargingController.errorMessage}');
 
       if (isConnectionIssue) {
-        _scheduleInvoiceAfterInterruption(
-          message: 'Connection interrupted. Preparing invoice in a moment...',
-        );
+        unawaited(_handleNetworkInterruptionAndRetry());
         return;
       }
 
@@ -1167,37 +1424,39 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
 
       setState(() {
         try {
+          final liveData = _liveChargingController.currentLiveData;
+          final elapsed = liveData?.elapsedTime;
+
+          if (elapsed != null) {
+            final parsedDuration = _parseDuration(elapsed);
+            if (_isValidDuration(parsedDuration)) {
+              if (_lastElapsedUpdateTime == null ||
+                  _elapsedBaseDuration != parsedDuration) {
+                _elapsedBaseDuration = parsedDuration;
+                _lastElapsedUpdateTime = DateTime.now();
+              }
+
+              _currentDuration = calculateElapsedDuration(
+                baseDuration: _elapsedBaseDuration,
+                lastUpdateTime: _lastElapsedUpdateTime,
+                now: DateTime.now(),
+              );
+              _sessionStartTime = null;
+              return;
+            }
+          }
+
           if (_sessionStartTime != null) {
             _currentDuration = DateTime.now().difference(_sessionStartTime!);
             if (!_isValidDuration(_currentDuration)) {
               _currentDuration = Duration.zero;
             }
-          } else if (_liveChargingController.currentLiveData != null) {
-            final elapsed = _liveChargingController.currentLiveData?.elapsedTime;
-
-            if (elapsed != null) {
-              final parsedDuration = _parseDuration(elapsed);
-              if (_isValidDuration(parsedDuration)) {
-                _currentDuration = parsedDuration;
-              } else {
-                _currentDuration = Duration.zero;
-              }
+          } else if (liveData?.startedAt != null) {
+            _sessionStartTime = _parseDateTime(liveData!.startedAt);
+            if (_sessionStartTime == null) {
+              _sessionStartTime = DateTime.now();
             }
-
-            final startedAtRaw = _liveChargingController.currentLiveData?.startedAt;
-
-            if (startedAtRaw != null) {
-              _sessionStartTime = _parseDateTime(startedAtRaw);
-
-              if (_sessionStartTime == null && elapsed != null) {
-                final elapsedDuration = _extractDurationFromElapsedTime(elapsed);
-                if (elapsedDuration != null && _isValidDuration(elapsedDuration)) {
-                  _sessionStartTime = DateTime.now().subtract(elapsedDuration);
-                } else {
-                  _sessionStartTime = DateTime.now();
-                }
-              }
-            }
+            _currentDuration = Duration.zero;
           } else {
             _currentDuration = Duration.zero;
           }
@@ -1235,6 +1494,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
   void dispose() {
     _isMounted = false;
     _uiDebounceTimer?.cancel();
+    _connectivitySubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _liveChargingController.removeListener(_onControllerUpdate);
     _liveChargingController.stopPolling();
@@ -1251,7 +1511,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
   void _clearSessionData() {
     try {
       ActiveSessionService.clearSessionFromStorage();
-      print('🗑️ Session cleared using ActiveSessionService.clearSessionFromStorage()');
+      print(
+        '🗑️ Session cleared using ActiveSessionService.clearSessionFromStorage()',
+      );
       return;
     } catch (e) {
       print('⚠️ Error using ActiveSessionService.clearSessionFromStorage: $e');
@@ -1289,11 +1551,11 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
   }
 
   Widget _bottomSheetSummaryRow(
-      String label,
-      String value,
-      IconData icon, {
-        Color? valueColor,
-      }) {
+    String label,
+    String value,
+    IconData icon, {
+    Color? valueColor,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1342,7 +1604,8 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
     if (sessionId == null || sessionId <= 0) {
       try {
         final prefs = await SharedPreferences.getInstance();
-        sessionId = prefs.getInt('active_session_id') ??
+        sessionId =
+            prefs.getInt('active_session_id') ??
             prefs.getInt('session_id') ??
             prefs.getInt('current_session_id');
         print('🔍 Stop Charging - SharedPreferences Session ID: $sessionId');
@@ -1456,16 +1719,18 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
         _durationTimer?.cancel();
         _isSessionCompleted = true;
         _showInvoiceBottomSheet();
-
       } else if (_isMounted) {
         // If stop failed, try to clear session anyway if it's already completed
-        final errorMsg = _stopChargingController.errorMessage?.toLowerCase() ?? '';
+        final errorMsg =
+            _stopChargingController.errorMessage?.toLowerCase() ?? '';
 
         if (errorMsg.contains('not found') ||
             errorMsg.contains('already') ||
             errorMsg.contains('completed')) {
           // Session is already stopped or invalid - show invoice
-          print('⚠️ Session already completed or not found - proceeding to invoice');
+          print(
+            '⚠️ Session already completed or not found - proceeding to invoice',
+          );
           _liveChargingController.stopPolling();
           stopPolling();
           _durationTimer?.cancel();
@@ -1475,7 +1740,8 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                _stopChargingController.errorMessage ?? "Failed to stop charging",
+                _stopChargingController.errorMessage ??
+                    "Failed to stop charging",
               ),
               backgroundColor: Colors.red,
             ),
@@ -1514,10 +1780,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Appcolor.borderGrey,
-          width: 1.0,
-        ),
+        border: Border.all(color: Appcolor.borderGrey, width: 1.0),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1559,10 +1822,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Appcolor.borderGrey,
-          width: 1.0,
-        ),
+        border: Border.all(color: Appcolor.borderGrey, width: 1.0),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1621,11 +1881,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
   }) {
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 16,
-          color: Appcolor.green.withOpacity(0.7),
-        ),
+        Icon(icon, size: 16, color: Appcolor.green.withOpacity(0.7)),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -1671,521 +1927,591 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> with Widget
         body: SafeArea(
           child: _isRecovering
               ? const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Appcolor.green,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Appcolor.green,
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      Text("Recovering charging session..."),
+                    ],
                   ),
-                ),
-                SizedBox(height: 16),
-                Text("Recovering charging session..."),
-              ],
-            ),
-          )
+                )
               : Consumer<LiveChargingController>(
-            builder: (context, controller, child) {
-              if (controller.isNoActiveSession) {
-                return const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Appcolor.green,
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                      Text("Session completed..."),
-                    ],
-                  ),
-                );
-              }
-
-              if (controller.isLoading && controller.currentLiveData == null) {
-                return const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Appcolor.green,
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                      Text("Loading charging data..."),
-                    ],
-                  ),
-                );
-              }
-
-              if (!controller.isLoading && controller.currentLiveData == null) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.ev_station,
-                        size: 64,
-                        color: Colors.grey.shade400,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "No active charging session",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Please start a new charging session",
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Appcolor.green,
-                        ),
-                        child: const Text("Go Back"),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            "Charging In Progress",
-                            style: TextStyle(
-                              color: Appcolor.black,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              fontFamily: Appcolor.fontFamily,
+                  builder: (context, controller, child) {
+                    if (controller.isNoActiveSession) {
+                      return const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Appcolor.green,
+                              ),
                             ),
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            SizedBox(height: 16),
+                            Text("Session completed..."),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                  const Divider(
-                    color: Appcolor.borderGrey,
-                    thickness: 0.5,
-                  ),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                      );
+                    }
+
+                    if (controller.isLoading &&
+                        controller.currentLiveData == null) {
+                      return const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Appcolor.green,
+                              ),
+                            ),
+                            SizedBox(height: 16),
+                            Text("Loading charging data..."),
+                          ],
+                        ),
+                      );
+                    }
+
+                    if (!controller.isLoading &&
+                        controller.currentLiveData == null) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.ev_station,
+                              size: 64,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              "No active charging session",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "Please start a new charging session",
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Appcolor.green,
+                              ),
+                              child: const Text("Go Back"),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Expanded(
-                                flex: 1,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        Icon(
-                                          Icons.access_time,
-                                          color: Colors.grey.shade600,
-                                          size: 14,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            "Started at ${controller.formattedStartedAt}",
-                                            style: TextStyle(
-                                              color: Colors.grey.shade600,
-                                              fontSize: 11,
-                                              fontFamily: Appcolor.fontFamily,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        Container(
-                                          width: 8,
-                                          height: 8,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: controller.chargingStatus == "Charging"
-                                                ? Appcolor.green
-                                                : Colors.red,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            "Refresh in ${(controller.pollIntervalMs / 1000).toInt()}s",
-                                            style: TextStyle(
-                                              color: Colors.grey.shade600,
-                                              fontSize: 11,
-                                              fontFamily: Appcolor.fontFamily,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                child: Text(
+                                  "Charging In Progress",
+                                  style: TextStyle(
+                                    color: Appcolor.black,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: Appcolor.fontFamily,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 20),
-                          Container(
-                            height: 160,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              color: Appcolor.lightGrey,
-                              image: const DecorationImage(
-                                image: AssetImage('assets/tataev.jpg'),
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Column(
-                            children: [
-                              if (shouldShowBatteryProgressSection(controller.chargerType))
+                        ),
+                        const Divider(
+                          color: Appcolor.borderGrey,
+                          thickness: 0.5,
+                        ),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              children: [
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Expanded(
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.flash_on,
-                                            color: Appcolor.green,
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            "${controller.batteryPercentage.toStringAsFixed(0)}%",
-                                            style: TextStyle(
-                                              color: Appcolor.black,
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.bold,
-                                              fontFamily: Appcolor.fontFamily,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: controller.chargingStatus == "Charging"
-                                                  ? Appcolor.green.withOpacity(0.1)
-                                                  : Colors.red.withOpacity(0.1),
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                            child: Text(
-                                              controller.chargingStatus,
-                                              style: TextStyle(
-                                                color: controller.chargingStatus == "Charging"
-                                                    ? Appcolor.green
-                                                    : Colors.red,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w500,
-                                                fontFamily: Appcolor.fontFamily,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          _formattedRunningDuration,
-                                          style: TextStyle(
-                                            color: Colors.grey.shade600,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            fontFamily: Appcolor.fontFamily,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        Text(
-                                          "Elapsed Time",
-                                          style: TextStyle(
-                                            color: Colors.grey.shade500,
-                                            fontSize: 10,
-                                            fontFamily: Appcolor.fontFamily,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                )
-                              else
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
+                                      flex: 1,
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
                                         children: [
-                                          Text(
-                                            "Charging Session",
-                                            style: TextStyle(
-                                              color: Appcolor.black,
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w700,
-                                              fontFamily: Appcolor.fontFamily,
-                                            ),
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.end,
+                                            children: [
+                                              Icon(
+                                                Icons.access_time,
+                                                color: Colors.grey.shade600,
+                                                size: 14,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Expanded(
+                                                child: Text(
+                                                  "Started at ${controller.formattedStartedAt}",
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade600,
+                                                    fontSize: 11,
+                                                    fontFamily:
+                                                        Appcolor.fontFamily,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          const SizedBox(height: 4),
-                                          // Text(
-                                          //   "Waiting for DC charging metrics",
-                                          //   style: TextStyle(
-                                          //     color: Colors.grey.shade600,
-                                          //     fontSize: 12,
-                                          //     fontFamily: Appcolor.fontFamily,
-                                          //   ),
+                                          const SizedBox(height: 6),
+                                          // Row(
+                                          //   mainAxisAlignment:
+                                          //       MainAxisAlignment.end,
+                                          //   children: [
+                                          //     Container(
+                                          //       width: 8,
+                                          //       height: 8,
+                                          //       decoration: BoxDecoration(
+                                          //         shape: BoxShape.circle,
+                                          //         color:
+                                          //             controller
+                                          //                     .chargingStatus ==
+                                          //                 "Charging"
+                                          //             ? Appcolor.green
+                                          //             : Colors.red,
+                                          //       ),
+                                          //     ),
+                                          //     const SizedBox(width: 4),
+                                          //     // Expanded(
+                                          //     //   child: Text(
+                                          //     //     "Refresh in ${(controller.pollIntervalMs / 1000).toInt()}s",
+                                          //     //     style: TextStyle(
+                                          //     //       color: Colors.grey.shade600,
+                                          //     //       fontSize: 11,
+                                          //     //       fontFamily:
+                                          //     //           Appcolor.fontFamily,
+                                          //     //     ),
+                                          //     //     overflow:
+                                          //     //         TextOverflow.ellipsis,
+                                          //     //   ),
+                                          //     // ),
+                                          //   ],
                                           // ),
                                         ],
                                       ),
                                     ),
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          _formattedRunningDuration,
-                                          style: TextStyle(
-                                            color: Colors.grey.shade600,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            fontFamily: Appcolor.fontFamily,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        Text(
-                                          "Elapsed Time",
-                                          style: TextStyle(
-                                            color: Colors.grey.shade500,
-                                            fontSize: 10,
-                                            fontFamily: Appcolor.fontFamily,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
                                   ],
                                 ),
-                              if (shouldShowBatteryProgressSection(controller.chargerType))
-                                const SizedBox(height: 10),
-                              if (shouldShowBatteryProgressSection(controller.chargerType))
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: LinearProgressIndicator(
-                                    value: controller.batteryPercentage / 100,
-                                    minHeight: 8,
-                                    backgroundColor: Appcolor.borderGrey,
-                                    color: Appcolor.green,
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _infoCard(
-                                  "Amount Used",
-                                  controller.totalCost,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _infoCard(
-                                  "Current Speed",
-                                  controller.currentPower,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 5),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 12),
-                                _infoCardWithBorder(
-                                  "Energy Consumed",
-                                  controller.energyConsumed,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Appcolor.borderGrey,
-                                width: 1.0,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildDetailRow(
-                                  icon: Icons.ev_station,
-                                  label: 'Charger',
-                                  value: formatDisplayValue(controller.chargerName),
-                                ),
-                                const Divider(
-                                  color: Appcolor.borderGrey,
-                                  thickness: 0.5,
-                                  height: 16,
-                                ),
-                                _buildDetailRow(
-                                  icon: Icons.confirmation_number,
-                                  label: 'Charger ID',
-                                  value: formatDisplayValue(controller.chargerId),
-                                ),
-                                const Divider(
-                                  color: Appcolor.borderGrey,
-                                  thickness: 0.5,
-                                  height: 16,
-                                ),
-                                _buildDetailRow(
-                                  icon: Icons.power,
-                                  label: 'Connector',
-                                  value: formatDisplayValue(controller.connectorName),
-                                ),
-                                const Divider(
-                                  color: Appcolor.borderGrey,
-                                  thickness: 0.5,
-                                  height: 16,
-                                ),
-                                _buildDetailRow(
-                                  icon: Icons.fiber_pin,
-                                  label: 'Connector UID',
-                                  value: formatDisplayValue(controller.currentLiveData?.connector.uid),
-                                ),
-                                const Divider(
-                                  color: Appcolor.borderGrey,
-                                  thickness: 0.5,
-                                  height: 16,
-                                ),
-                                _buildDetailRow(
-                                  icon: Icons.directions_car,
-                                  label: 'Vehicle Name',
-                                  value: _vehicleName.isNotEmpty ? _vehicleName : 'Unknown Vehicle',
-                                ),
-                                const Divider(
-                                  color: Appcolor.borderGrey,
-                                  thickness: 0.5,
-                                  height: 16,
-                                ),
-                                _buildDetailRow(
-                                  icon: Icons.confirmation_number,
-                                  label: 'Registration Number',
-                                  value: _registrationNumber.isNotEmpty ? _registrationNumber : 'N/A',
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: SizedBox(
-                              width: double.infinity,
-                              height: 56,
-                              child: ElevatedButton(
-                                onPressed: _stopChargingController.isLoading
-                                    ? null
-                                    : _stopCharging,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  elevation: 2,
-                                ),
-                                child: _stopChargingController.isLoading
-                                    ? const SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                    : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: const [
-                                    Icon(
-                                      Icons.stop_circle,
-                                      color: Colors.white,
-                                      size: 24,
+                                const SizedBox(height: 20),
+                                Container(
+                                  height: 160,
+                                  width: double.infinity,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    color: Appcolor.lightGrey,
+                                    image: const DecorationImage(
+                                      image: AssetImage('assets/tataev.jpg'),
+                                      fit: BoxFit.cover,
                                     ),
-                                    SizedBox(width: 12),
-                                    Text(
-                                      "Stop Charging",
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                Column(
+                                  children: [
+                                    if (shouldShowBatteryProgressSection(
+                                      controller.chargerType,
+                                    ))
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.flash_on,
+                                                  color: Appcolor.green,
+                                                  size: 20,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  "${controller.batteryPercentage.toStringAsFixed(0)}%",
+                                                  style: TextStyle(
+                                                    color: Appcolor.black,
+                                                    fontSize: 20,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontFamily:
+                                                        Appcolor.fontFamily,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 2,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        controller
+                                                                .chargingStatus ==
+                                                            "Charging"
+                                                        ? Appcolor.green
+                                                              .withOpacity(0.1)
+                                                        : Colors.red
+                                                              .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    controller.chargingStatus,
+                                                    style: TextStyle(
+                                                      color:
+                                                          controller
+                                                                  .chargingStatus ==
+                                                              "Charging"
+                                                          ? Appcolor.green
+                                                          : Colors.red,
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      fontFamily:
+                                                          Appcolor.fontFamily,
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                _formattedRunningDuration,
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade600,
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontFamily:
+                                                      Appcolor.fontFamily,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Text(
+                                                "Elapsed Time",
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade500,
+                                                  fontSize: 10,
+                                                  fontFamily:
+                                                      Appcolor.fontFamily,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      )
+                                    else
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  "Charging Session",
+                                                  style: TextStyle(
+                                                    color: Appcolor.black,
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w700,
+                                                    fontFamily:
+                                                        Appcolor.fontFamily,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                // Text(
+                                                //   "Waiting for DC charging metrics",
+                                                //   style: TextStyle(
+                                                //     color: Colors.grey.shade600,
+                                                //     fontSize: 12,
+                                                //     fontFamily: Appcolor.fontFamily,
+                                                //   ),
+                                                // ),
+                                              ],
+                                            ),
+                                          ),
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                _formattedRunningDuration,
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade600,
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontFamily:
+                                                      Appcolor.fontFamily,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Text(
+                                                "Elapsed Time",
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade500,
+                                                  fontSize: 10,
+                                                  fontFamily:
+                                                      Appcolor.fontFamily,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    if (shouldShowBatteryProgressSection(
+                                      controller.chargerType,
+                                    ))
+                                      const SizedBox(height: 10),
+                                    if (shouldShowBatteryProgressSection(
+                                      controller.chargerType,
+                                    ))
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: LinearProgressIndicator(
+                                          value:
+                                              controller.batteryPercentage /
+                                              100,
+                                          minHeight: 8,
+                                          backgroundColor: Appcolor.borderGrey,
+                                          color: Appcolor.green,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _infoCard(
+                                        "Amount Used",
+                                        controller.totalCost,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _infoCard(
+                                        "Current Speed",
+                                        controller.currentPower,
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
+                                const SizedBox(height: 5),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const SizedBox(height: 12),
+                                      _infoCardWithBorder(
+                                        "Energy Consumed",
+                                        controller.energyConsumed,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Appcolor.borderGrey,
+                                      width: 1.0,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _buildDetailRow(
+                                        icon: Icons.ev_station,
+                                        label: 'Charger',
+                                        value: formatDisplayValue(
+                                          controller.chargerName,
+                                        ),
+                                      ),
+                                      const Divider(
+                                        color: Appcolor.borderGrey,
+                                        thickness: 0.5,
+                                        height: 16,
+                                      ),
+                                      _buildDetailRow(
+                                        icon: Icons.confirmation_number,
+                                        label: 'Charger ID',
+                                        value: formatDisplayValue(
+                                          controller.chargerId,
+                                        ),
+                                      ),
+                                      const Divider(
+                                        color: Appcolor.borderGrey,
+                                        thickness: 0.5,
+                                        height: 16,
+                                      ),
+                                      _buildDetailRow(
+                                        icon: Icons.power,
+                                        label: 'Connector',
+                                        value: formatDisplayValue(
+                                          controller.connectorName,
+                                        ),
+                                      ),
+                                      const Divider(
+                                        color: Appcolor.borderGrey,
+                                        thickness: 0.5,
+                                        height: 16,
+                                      ),
+                                      _buildDetailRow(
+                                        icon: Icons.fiber_pin,
+                                        label: 'Connector UID',
+                                        value: formatDisplayValue(
+                                          controller
+                                              .currentLiveData
+                                              ?.connector
+                                              .uid,
+                                        ),
+                                      ),
+                                      const Divider(
+                                        color: Appcolor.borderGrey,
+                                        thickness: 0.5,
+                                        height: 16,
+                                      ),
+                                      _buildDetailRow(
+                                        icon: Icons.directions_car,
+                                        label: 'Vehicle Name',
+                                        value: _vehicleName.isNotEmpty
+                                            ? _vehicleName
+                                            : 'Unknown Vehicle',
+                                      ),
+                                      const Divider(
+                                        color: Appcolor.borderGrey,
+                                        thickness: 0.5,
+                                        height: 16,
+                                      ),
+                                      _buildDetailRow(
+                                        icon: Icons.confirmation_number,
+                                        label: 'Registration Number',
+                                        value: _registrationNumber.isNotEmpty
+                                            ? _registrationNumber
+                                            : 'N/A',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    height: 56,
+                                    child: ElevatedButton(
+                                      onPressed:
+                                          _stopChargingController.isLoading
+                                          ? null
+                                          : _stopCharging,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                        ),
+                                        elevation: 2,
+                                      ),
+                                      child: _stopChargingController.isLoading
+                                          ? const SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: const [
+                                                Icon(
+                                                  Icons.stop_circle,
+                                                  color: Colors.white,
+                                                  size: 24,
+                                                ),
+                                                SizedBox(width: 12),
+                                                Text(
+                                                  "Stop Charging",
+                                                  style: TextStyle(
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 10),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
         ),
       ),
     );

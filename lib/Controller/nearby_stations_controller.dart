@@ -24,6 +24,10 @@ class NearbyStationsController extends ChangeNotifier {
   bool _isOffline = false;
   final WishlistService _wishlistService = WishlistService();
 
+  DateTime? _lastConnectivityCheck;
+  bool _lastConnectivityResult = false;
+  static const Duration _connectivityCacheTtl = Duration(seconds: 5);
+
   Position? _currentPosition;
   bool _isLoadingLocation = false;
   String? _locationError;
@@ -55,6 +59,14 @@ class NearbyStationsController extends ChangeNotifier {
 
   Future<bool> _checkConnectivity() async {
     try {
+      if (_lastConnectivityCheck != null) {
+        final elapsed = DateTime.now().difference(_lastConnectivityCheck!);
+        if (elapsed < _connectivityCacheTtl) {
+          print('Connectivity check cached: $_lastConnectivityResult (${elapsed.inMilliseconds}ms old)');
+          return _lastConnectivityResult;
+        }
+      }
+
       final connectivityResult = await Connectivity().checkConnectivity();
       final hasInternet = connectivityResult != ConnectivityResult.none;
       print('Connectivity Status: $connectivityResult - Has Internet: $hasInternet');
@@ -64,17 +76,29 @@ class NearbyStationsController extends ChangeNotifier {
           final result = await InternetAddress.lookup('google.com');
           final isConnected = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
           print('DNS Resolution Test: $isConnected');
+          _lastConnectivityCheck = DateTime.now();
+          _lastConnectivityResult = isConnected;
           return isConnected;
         } catch (e) {
           print('DNS Resolution Failed: $e');
+          _lastConnectivityCheck = DateTime.now();
+          _lastConnectivityResult = false;
           return false;
         }
       }
+      _lastConnectivityCheck = DateTime.now();
+      _lastConnectivityResult = false;
       return false;
     } catch (e) {
       print('Connectivity check failed: $e');
+      _lastConnectivityCheck = DateTime.now();
+      _lastConnectivityResult = false;
       return false;
     }
+  }
+
+  void invalidateConnectivityCache() {
+    _lastConnectivityCheck = null;
   }
 
   Future<bool> getCurrentLocation({bool requestPermissionIfDenied = true}) async {
@@ -826,6 +850,7 @@ class NearbyStationsController extends ChangeNotifier {
     _errorMessage = '';
     _isOffline = false;
     _locationError = null;
+    invalidateConnectivityCache();
     notifyListeners();
   }
 

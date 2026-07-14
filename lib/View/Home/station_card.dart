@@ -8,7 +8,7 @@ class StationCard extends StatelessWidget {
   final VoidCallback onFavoriteToggle;
   final VoidCallback onDetails;
   final VoidCallback onNavigate;
-  final VoidCallback onClose; // Added close callback
+  final VoidCallback onClose;
 
   const StationCard({
     super.key,
@@ -18,11 +18,13 @@ class StationCard extends StatelessWidget {
     required this.onFavoriteToggle,
     required this.onDetails,
     required this.onNavigate,
-    required this.onClose, // Made required
+    required this.onClose,
   });
 
   String _formatDistance() {
-    return distance < 1 ? "${(distance * 1000).toInt()} meters" : "${distance.toStringAsFixed(1)} km";
+    return distance < 1
+        ? "${(distance * 1000).toInt()} meters"
+        : "${distance.toStringAsFixed(1)} km";
   }
 
   String _getTravelTime() {
@@ -33,8 +35,95 @@ class StationCard extends StatelessWidget {
     return "${hours}h${remainingMinutes > 0 ? ' $remainingMinutes min' : ''}";
   }
 
+  // ✅ Get dynamic status from connector ports
+  String _getStationStatus() {
+    if (station.connectorPorts.isEmpty) {
+      return 'No connectors';
+    }
+
+    final hasAvailable = station.connectorPorts.any(
+            (port) => port.status.toLowerCase() == 'available'
+    );
+
+    final hasFault = station.connectorPorts.any(
+            (port) => port.status.toLowerCase() == 'fault' ||
+            port.status.toLowerCase() == 'error'
+    );
+
+    final hasOffline = station.connectorPorts.any(
+            (port) => port.status.toLowerCase() == 'offline'
+    );
+
+    if (hasAvailable) {
+      final availableCount = station.connectorPorts
+          .where((port) => port.status.toLowerCase() == 'available')
+          .length;
+      return '$availableCount avail';
+    } else if (hasFault || hasOffline) {
+      return '⚠️ Maintenance';
+    } else {
+      return 'Busy';
+    }
+  }
+
+  // ✅ Get status color
+  Color _getStatusColor() {
+    if (station.connectorPorts.isEmpty) {
+      return Colors.grey;
+    }
+
+    final hasAvailable = station.connectorPorts.any(
+            (port) => port.status.toLowerCase() == 'available'
+    );
+
+    final hasFault = station.connectorPorts.any(
+            (port) => port.status.toLowerCase() == 'fault' ||
+            port.status.toLowerCase() == 'error'
+    );
+
+    final hasOffline = station.connectorPorts.any(
+            (port) => port.status.toLowerCase() == 'offline'
+    );
+
+    if (hasAvailable) {
+      return Colors.green;
+    } else if (hasFault || hasOffline) {
+      return Colors.orange;
+    } else {
+      return Colors.red;
+    }
+  }
+
+  // ✅ Get available count
+  int _getAvailableCount() {
+    return station.connectorPorts
+        .where((port) => port.status.toLowerCase() == 'available')
+        .length;
+  }
+
+  // ✅ Get formatted price - CLEAN and ONLY Indian Rupees
+  String _getFormattedPrice() {
+    if (station.estimatedChargingPrice > 0) {
+      // Clean the price to remove any existing currency symbols
+      String priceStr = station.estimatedChargingPrice.toString();
+      // Remove any non-numeric characters except decimal point
+      priceStr = priceStr.replaceAll(RegExp(r'[^0-9.]'), '');
+      double cleanPrice = double.tryParse(priceStr) ?? 0.0;
+      if (cleanPrice > 0) {
+        // Show as Indian Rupees with ₹ symbol
+        return '₹${cleanPrice.toStringAsFixed(0)}';
+      }
+    }
+    return 'N/A';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final statusText = _getStationStatus();
+    final statusColor = _getStatusColor();
+    final availableCount = _getAvailableCount();
+    final formattedPrice = _getFormattedPrice();
+
     return GestureDetector(
       onTap: onDetails,
       child: Container(
@@ -52,7 +141,10 @@ class StationCard extends StatelessWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.green.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12)
+                  ),
                   child: const Icon(Icons.ev_station, color: Colors.green, size: 24),
                 ),
                 const SizedBox(width: 12),
@@ -62,23 +154,40 @@ class StationCard extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Expanded(child: Text(station.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
-                          // Favorite button
+                          Expanded(
+                              child: Text(
+                                  station.name,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold
+                                  )
+                              )
+                          ),
                           GestureDetector(
                             onTap: onFavoriteToggle,
                             child: Container(
                               padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), shape: BoxShape.circle),
-                              child: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? Colors.red : Colors.white, size: 20),
+                              decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  shape: BoxShape.circle
+                              ),
+                              child: Icon(
+                                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                                  color: isFavorite ? Colors.red : Colors.white,
+                                  size: 20
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
-                          // Close button (replaces status)
                           GestureDetector(
                             onTap: onClose,
                             child: Container(
                               padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), shape: BoxShape.circle),
+                              decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  shape: BoxShape.circle
+                              ),
                               child: const Icon(Icons.close, color: Colors.white, size: 20),
                             ),
                           ),
@@ -87,13 +196,30 @@ class StationCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 14),
-                          const SizedBox(width: 4),
-                          Text(station.rating.toStringAsFixed(1), style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                          const SizedBox(width: 8),
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: statusColor,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            statusText,
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
                           const Icon(Icons.ev_station, color: Colors.green, size: 12),
                           const SizedBox(width: 4),
-                          Text('${station.availableChargers} avail', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          Text(
+                            '${station.connectorPorts.length} total',
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
                         ],
                       ),
                     ],
@@ -108,7 +234,12 @@ class StationCard extends StatelessWidget {
               children: [
                 const Icon(Icons.location_on, color: Colors.green, size: 16),
                 const SizedBox(width: 8),
-                Expanded(child: Text(station.fullAddress, style: const TextStyle(color: Colors.white70, fontSize: 12))),
+                Expanded(
+                  child: Text(
+                      station.fullAddress,
+                      style: const TextStyle(color: Colors.white70, fontSize: 12)
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -118,7 +249,12 @@ class StationCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 _infoChip(Icons.access_time, _getTravelTime(), Colors.orange),
                 const SizedBox(width: 8),
-                _infoChip(Icons.attach_money, '₹${station.estimatedChargingPrice.toStringAsFixed(0)}', Colors.green),
+                // ✅ Price chip - WITHOUT rupee icon, just showing the price
+                _infoChip(
+                    null, // No icon
+                    formattedPrice,
+                    station.estimatedChargingPrice > 0 ? Colors.green : Colors.grey
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -129,7 +265,10 @@ class StationCard extends StatelessWidget {
                     onPressed: onDetails,
                     icon: const Icon(Icons.info_outline, size: 18),
                     label: const Text('Details'),
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white54)),
+                    style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white54)
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -138,7 +277,9 @@ class StationCard extends StatelessWidget {
                     onPressed: onNavigate,
                     icon: const Icon(Icons.navigation, size: 18),
                     label: const Text('Navigate'),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green
+                    ),
                   ),
                 ),
               ],
@@ -149,14 +290,20 @@ class StationCard extends StatelessWidget {
     );
   }
 
-  Widget _infoChip(IconData icon, String label, Color color) {
+  Widget _infoChip(IconData? icon, String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+          color: color.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(8)
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 14),
-          const SizedBox(width: 4),
+          if (icon != null) ...[
+            Icon(icon, color: color, size: 14),
+            const SizedBox(width: 4),
+          ],
           Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
         ],
       ),

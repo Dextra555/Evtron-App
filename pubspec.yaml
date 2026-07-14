@@ -49,6 +49,11 @@ dependencies:
   http:
   connectivity_plus:
   permission_handler:
+  lottie:
+  circle_nav_bar:
+  razorpay_flutter:
+  shimmer:
+  printing:
 
 dev_dependencies:
   flutter_test:
@@ -74,10 +79,12 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+     - assets/
+     - assets/fonts/Arial.ttf
      - assets/logo.png
      - assets/tear.png
-     - assets/car.png
      - assets/tataev.jpg
+     - assets/ev-charging.json
 
   #   - images/a_dot_ham.jpeg
 

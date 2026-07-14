@@ -1,34 +1,4 @@
-// lib/Model/ev_station_model.dart
-
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-
-class ConnectorPort {
-  final String type;
-  final String status;
-  final int maxPower;
-
-  ConnectorPort({
-    required this.type,
-    required this.status,
-    required this.maxPower,
-  });
-
-  factory ConnectorPort.fromJson(Map<String, dynamic> json) {
-    return ConnectorPort(
-      type: json['type'] ?? '',
-      status: json['status'] ?? '',
-      maxPower: json['max_power'] ?? 0,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'type': type,
-      'status': status,
-      'max_power': maxPower,
-    };
-  }
-}
 
 class EVStation {
   final int id;
@@ -36,7 +6,6 @@ class EVStation {
   final String fullAddress;
   final double latitude;
   final double longitude;
-  final String? distanceFromUser;
   final String status;
   final String stationType;
   final bool is247;
@@ -47,7 +16,10 @@ class EVStation {
   final List<String> amenities;
   final bool realTimeAvailability;
   final DateTime createdAt;
-  final double rating; // Keep this as final property
+  final double? rating;
+  final int? activeChargers;
+  final int? inactiveChargers;
+  final Map<String, int>? chargerStatusCounts;
 
   EVStation({
     required this.id,
@@ -55,79 +27,124 @@ class EVStation {
     required this.fullAddress,
     required this.latitude,
     required this.longitude,
-    this.distanceFromUser,
     required this.status,
     required this.stationType,
     required this.is247,
     required this.estimatedChargingPrice,
     required this.totalChargers,
     required this.availableChargers,
-    required this.connectorPorts,
-    required this.amenities,
+    this.connectorPorts = const [],
+    this.amenities = const [],
     required this.realTimeAvailability,
     required this.createdAt,
-    this.rating = 0.0, // Default value
+    this.rating,
+    this.activeChargers,
+    this.inactiveChargers,
+    this.chargerStatusCounts,
   });
 
-  // Helper getter for LatLng
-  LatLng get location => LatLng(latitude, longitude);
-
-  // Helper getter for vicinity (using full address)
-  String get vicinity => fullAddress;
-
-  // REMOVE THIS DUPLICATE GETTER - it's causing the conflict
-  // double get rating => 4.5; // DELETE THIS LINE
-
   factory EVStation.fromJson(Map<String, dynamic> json) {
-    // Debug print to see what we're parsing
-    print('Parsing station: ${json['station_name']}');
-    print('Connector ports: ${json['connector_ports']}');
-    print('Amenities: ${json['amenities']}');
+    // Parse connector ports
+    List<ConnectorPort> ports = [];
+    if (json['connector_ports'] != null && json['connector_ports'] is List) {
+      ports = (json['connector_ports'] as List)
+          .map((port) => ConnectorPort.fromJson(port))
+          .toList();
+    }
+
+    // Parse charger status counts
+    Map<String, int>? statusCounts;
+    if (json['charger_status_counts'] != null && json['charger_status_counts'] is Map) {
+      statusCounts = {};
+      (json['charger_status_counts'] as Map).forEach((key, value) {
+        statusCounts![key.toString()] = (value as int);
+      });
+    }
 
     return EVStation(
       id: json['id'] ?? 0,
-      name: json['station_name'] ?? 'Unknown Station',
+      name: json['station_name'] ?? 'EV Station',
       fullAddress: json['full_address'] ?? 'Address not available',
-      latitude: double.tryParse(json['latitude']?.toString() ?? '0') ?? 0,
-      longitude: double.tryParse(json['longitude']?.toString() ?? '0') ?? 0,
-      distanceFromUser: json['distance_from_user']?.toString(),
-      status: json['status'] ?? 'unknown',
+      latitude: double.parse(json['latitude']?.toString() ?? '0.0'),
+      longitude: double.parse(json['longitude']?.toString() ?? '0.0'),
+      status: json['status'] ?? 'active',
       stationType: json['station_type'] ?? 'public',
       is247: json['is_24_7'] ?? false,
-      estimatedChargingPrice: double.tryParse(json['estimated_charging_price']?.toString() ?? '0') ?? 0,
+      estimatedChargingPrice: double.parse(json['estimated_charging_price']?.toString() ?? '0.0'),
       totalChargers: json['total_chargers'] ?? 0,
       availableChargers: json['available_chargers'] ?? 0,
-      connectorPorts: (json['connector_ports'] as List?)
-          ?.map((port) => ConnectorPort.fromJson(port))
-          .toList() ?? [],
-      amenities: (json['amenities'] as List?)
-          ?.map((item) => item.toString())
-          .toList() ?? [],
+      connectorPorts: ports,
+      amenities: (json['amenities'] as List?)?.map((e) => e.toString()).toList() ?? [],
       realTimeAvailability: json['real_time_availability'] ?? false,
-      createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
-      rating: (json['rating'] ?? 0.0).toDouble(), // Parse rating from JSON
+      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
+      rating: json['rating']?.toDouble(),
+      activeChargers: json['active_chargers'],
+      inactiveChargers: json['inactive_chargers'],
+      chargerStatusCounts: statusCounts,
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'station_name': name,
-      'full_address': fullAddress,
-      'latitude': latitude,
-      'longitude': longitude,
-      'distance_from_user': distanceFromUser,
-      'status': status,
-      'station_type': stationType,
-      'is_24_7': is247,
-      'estimated_charging_price': estimatedChargingPrice,
-      'total_chargers': totalChargers,
-      'available_chargers': availableChargers,
-      'connector_ports': connectorPorts.map((port) => port.toJson()).toList(),
-      'amenities': amenities,
-      'real_time_availability': realTimeAvailability,
-      'created_at': createdAt.toIso8601String(),
-      'rating': rating,
-    };
+  // Helper method to get connector status counts
+  Map<String, int> getConnectorStatusCounts() {
+    Map<String, int> statusCounts = {};
+    for (var port in connectorPorts) {
+      statusCounts[port.status] = (statusCounts[port.status] ?? 0) + 1;
+    }
+    return statusCounts;
+  }
+
+  // Helper method to determine overall availability status
+  String getOverallStatus() {
+    if (availableChargers > 0) {
+      return 'available';
+    }
+
+    if (connectorPorts.isEmpty) {
+      return 'unavailable';
+    }
+
+    bool hasAvailable = connectorPorts.any(
+      (port) => port.status.toLowerCase() == 'available',
+    );
+    bool hasFault = connectorPorts.any(
+      (port) => port.status.toLowerCase() == 'fault' || port.status.toLowerCase() == 'offline',
+    );
+    bool hasBusy = connectorPorts.any(
+      (port) => port.status.toLowerCase() == 'busy' || port.status.toLowerCase() == 'charging',
+    );
+
+    if (hasAvailable) return 'available';
+    if (hasBusy) return 'busy';
+    if (hasFault) return 'fault';
+    return 'unavailable';
+  }
+
+  LatLng get location => LatLng(latitude, longitude);
+}
+
+class ConnectorPort {
+  final String chargerId;
+  final int connectorId;
+  final String type;
+  final String status;
+  final double? maxPower;
+
+  ConnectorPort({
+    required this.chargerId,
+    required this.connectorId,
+    required this.type,
+    required this.status,
+    this.maxPower,
+  });
+
+  factory ConnectorPort.fromJson(Map<String, dynamic> json) {
+    return ConnectorPort(
+      chargerId: json['charger_id'] ?? '',
+      connectorId: json['connector_id'] ?? 0,
+      type: json['type'] ?? 'Unknown',
+      status: json['status'] ?? 'unknown',
+      maxPower: json['max_power']?.toDouble(),
+    );
   }
 }
+

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../Theme/colors.dart';
+import '../Profile/favourites.dart';
 
 class CustomBottomNavBar extends StatelessWidget {
   final int currentIndex;
@@ -16,43 +16,96 @@ class CustomBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      height: 65,
-      decoration: BoxDecoration(
-        color: Appcolor.green,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    return SizedBox(
+      height: 85, // Reduced from 115 to 85
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
         children: [
-          _buildNavItem(
-            icon: Icons.home_outlined,
-            activeIcon: Icons.home_rounded,
-            index: 0,
+          // Bottom Bar
+          Positioned(
+            bottom: 5,
+            left: 10,
+            right: 10,
+            child: ClipPath(
+              clipper: BottomNavCurveClipper(),
+              child: Container(
+                height: 60, // Reduced from 72 to 60
+                decoration: BoxDecoration(
+                  color: Appcolor.green,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.home_rounded,
+                      activeIcon: Icons.home_rounded,
+                      index: 0,
+                    ),
+
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.favorite,
+                      activeIcon: Icons.favorite,
+                      index: 1,
+                      isFavoriteButton: true,
+                    ),
+
+                    const SizedBox(width: 60),
+
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.wallet,
+                      activeIcon: Icons.wallet,
+                      index: 2,
+                    ),
+
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.person,
+                      activeIcon: Icons.person,
+                      index: 3,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          _buildNavItem(
-            icon: Icons.qr_code_scanner_outlined,
-            activeIcon: Icons.qr_code_scanner,
-            index: 1,
-            isScanButton: true,
-          ),
-          _buildNavItem(
-            icon: Icons.credit_card_outlined,
-            activeIcon: Icons.credit_card_rounded,
-            index: 2,
-          ),
-          _buildNavItem(
-            icon: Icons.person_outline_rounded,
-            activeIcon: Icons.person_rounded,
-            index: 3,
+
+          // Center QR Scanner Button
+          Positioned(
+            top: -15,
+            child: GestureDetector(
+              onTap: onScanTap,
+              child: Container(
+                width: 60, // Reduced from 70 to 60
+                height: 60, // Reduced from 70 to 60
+                decoration: BoxDecoration(
+                  color: Appcolor.green,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.qr_code_scanner,
+                  color: Colors.white,
+                  size: 30, // Reduced from 34 to 30
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -60,43 +113,112 @@ class CustomBottomNavBar extends StatelessWidget {
   }
 
   Widget _buildNavItem({
+    required BuildContext context,
     required IconData icon,
     required IconData activeIcon,
     required int index,
-    bool isScanButton = false,
+    bool isFavoriteButton = false,
   }) {
     final bool isSelected = currentIndex == index;
 
     return GestureDetector(
       onTap: () {
-        if (isScanButton) {
-          onScanTap();
+        if (isFavoriteButton) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+              const FavoriteStationsScreen(),
+            ),
+          );
         } else {
           onTap(index);
         }
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        child: Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isSelected
-                ? Colors.white.withOpacity(0.2)
-                : Colors.transparent,
-          ),
-          child: Center(
-            child: Icon(
-              isSelected ? activeIcon : icon,
-              size: 26,
-              color: Colors.white,
-            ),
-          ),
+      child: SizedBox(
+        width: 50, // Reduced from 60 to 50
+        height: 50, // Reduced from 60 to 50
+        child: Icon(
+          isSelected ? activeIcon : icon,
+          color: Colors.white,
+          size: 24, // Reduced from 28 to 24
         ),
       ),
     );
   }
+}
+
+class BottomNavCurveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    const double notchWidth = 30; // Reduced from 35 to 30
+    const double notchDepth = 30; // Reduced from 35 to 30
+    const double cornerRadius = 16; // Reduced from 20 to 16
+
+    Path path = Path();
+
+    // Start from bottom-left rounded corner
+    path.moveTo(0, cornerRadius);
+
+    // Top left corner
+    path.quadraticBezierTo(0, 0, cornerRadius, 0);
+
+    // Left side before notch
+    path.lineTo(size.width / 2 - notchWidth * 1.6, 0);
+
+    // Left notch curve
+    path.cubicTo(
+      size.width / 2 - notchWidth,
+      0,
+      size.width / 2 - notchWidth,
+      notchDepth,
+      size.width / 2,
+      notchDepth,
+    );
+
+    // Right notch curve
+    path.cubicTo(
+      size.width / 2 + notchWidth,
+      notchDepth,
+      size.width / 2 + notchWidth,
+      0,
+      size.width / 2 + notchWidth * 1.6,
+      0,
+    );
+
+    // Top right corner
+    path.lineTo(size.width - cornerRadius, 0);
+    path.quadraticBezierTo(
+      size.width,
+      0,
+      size.width,
+      cornerRadius,
+    );
+
+    // Bottom right corner
+    path.lineTo(size.width, size.height - cornerRadius);
+    path.quadraticBezierTo(
+      size.width,
+      size.height,
+      size.width - cornerRadius,
+      size.height,
+    );
+
+    // Bottom left corner
+    path.lineTo(cornerRadius, size.height);
+    path.quadraticBezierTo(
+      0,
+      size.height,
+      0,
+      size.height - cornerRadius,
+    );
+
+    path.close();
+
+    return path;
+  }
+
+  @override
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
 

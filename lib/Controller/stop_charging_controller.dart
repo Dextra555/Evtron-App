@@ -43,8 +43,10 @@ class StopChargingController extends ChangeNotifier {
       print('\n📥 Response received in Controller:');
       print('   • Success: ${response.success}');
       print('   • Message: ${response.message}');
+      print('   • Has Data: ${response.data != null}');
 
-      if (response.success && response.data != null) {
+      // ✅ FIX: Check only success flag, not data presence
+      if (response.success) {
         _stopResponse = response;
 
         // 🔴 CRITICAL: Clear the active charging session from SharedPreferences
@@ -61,13 +63,17 @@ class StopChargingController extends ChangeNotifier {
         print('\n✅ CHARGING SESSION STOPPED SUCCESSFULLY!');
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         print('📊 Session Summary:');
-        print('   • Session ID: ${response.data!.sessionId}');
-        print('   • Transaction ID: ${response.data!.transactionId}');
-        print('   • Status: ${response.data!.status}');
-        print('   • Duration: ${response.data!.formattedDuration}');
-        print('   • Energy Consumed: ${response.data!.formattedEnergy}');
-        print('   • Total Cost: ${response.data!.formattedCost}');
-        print('   • Wallet Balance: ₹${response.data!.walletBalanceAfter}');
+        print('   • Session ID: $sessionId');
+        print('   • Status: ${response.message}');
+        if (response.data != null) {
+          print('   • Transaction ID: ${response.data!.transactionId}');
+          print('   • Duration: ${response.data!.formattedDuration}');
+          print('   • Energy Consumed: ${response.data!.formattedEnergy}');
+          print('   • Total Cost: ${response.data!.formattedCost}');
+          print('   • Wallet Balance: ₹${response.data!.walletBalanceAfter}');
+        } else {
+          print('   • Note: Full session data will be available in invoice');
+        }
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
         _isLoading = false;
@@ -79,7 +85,6 @@ class StopChargingController extends ChangeNotifier {
         print('\n❌ ERROR: ${response.message}');
 
         // Even if the API returns an error, we might still want to clear the session
-        // depending on the error type. For example, if session is already stopped:
         final errorMsg = response.message?.toLowerCase() ?? '';
 
         if (errorMsg.contains('already') == true ||
@@ -89,6 +94,12 @@ class StopChargingController extends ChangeNotifier {
           print('⚠️ Session appears to be already stopped or invalid. Clearing active session...');
           await ChargingSessionService.clearActiveSession();
           await _clearChargingStatusData();
+
+          // ✅ Return true so invoice shows for already stopped session
+          _isLoading = false;
+          _isStopping = false;
+          notifyListeners();
+          return true;
         }
 
         _isLoading = false;
@@ -126,7 +137,7 @@ class StopChargingController extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Clear all charging-related keys
+      // Comprehensive list of all charging-related keys
       const chargingKeys = [
         'charging_status',
         'charging_session_id',
@@ -134,13 +145,23 @@ class StopChargingController extends ChangeNotifier {
         'active_session_id',
         'session_status',
         'session_started_at',
+        'current_session_id',
+        'last_charging_status',
+        // Add any other keys that might store session data
       ];
 
       for (var key in chargingKeys) {
         await prefs.remove(key);
       }
 
+      // Also clear using the service
+      await ChargingSessionService.clearActiveSession();
+
       print('✅ Cleared all charging status data from SharedPreferences');
+
+      // Verify clearing
+      final remainingKeys = prefs.getKeys();
+      print('📋 Remaining keys: $remainingKeys');
     } catch (e) {
       print('⚠️ Error clearing charging status data: $e');
     }
@@ -171,7 +192,9 @@ class StopChargingController extends ChangeNotifier {
 
   // Method to get stop summary text
   String getStopSummary() {
-    if (_stopResponse?.data == null) return 'No session data available';
+    if (_stopResponse?.data == null) {
+      return 'Stop request sent successfully!\n\nSession will stop shortly.';
+    }
 
     final data = _stopResponse!.data!;
     return '''
@@ -187,7 +210,12 @@ class StopChargingController extends ChangeNotifier {
 
   // Method to format stop response for display
   Map<String, String> getFormattedStopDetails() {
-    if (_stopResponse?.data == null) return {};
+    if (_stopResponse?.data == null) {
+      return {
+        'status': 'STOP REQUESTED',
+        'message': _stopResponse?.message ?? 'Stop request sent successfully',
+      };
+    }
 
     final data = _stopResponse!.data!;
     return {

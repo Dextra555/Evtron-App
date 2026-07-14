@@ -1,13 +1,21 @@
-import 'package:evtron/View/Home/scanner.dart';
+import 'package:evtron/View/Scanner/scanner.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import '../../Controller/invoice_controller.dart';
 import '../../Controller/live_charging_controller.dart';
 import '../../Controller/stop_charging_controller.dart';
+import '../../Model/live_charging_model.dart';
 import '../../Model/stop_charging_model.dart';
 import '../../Service/charging_session_service.dart';
+import '../../Service/active_session_service.dart';
+import '../../Service/invoice_pdf_service.dart';
+import '../../Service/invoice_service.dart';
 import '../../Theme/colors.dart';
+import 'invoice_bottom_sheet.dart';
+import 'charging_progress_page_utils.dart';
 
 class ChargingProgressPage extends StatefulWidget {
   final Map<String, dynamic>? chargingDetails;
@@ -18,93 +26,722 @@ class ChargingProgressPage extends StatefulWidget {
   State<ChargingProgressPage> createState() => _ChargingProgressPageState();
 }
 
-class _ChargingProgressPageState extends State<ChargingProgressPage> {
+class _ChargingProgressPageState extends State<ChargingProgressPage> with WidgetsBindingObserver {
   late LiveChargingController _liveChargingController;
   final StopChargingController _stopChargingController = StopChargingController();
+  final InvoiceController _invoiceController = InvoiceController();
 
   Timer? _durationTimer;
+  Timer? _pollingTimer;
+  Timer? _refreshTimer;
   Duration _currentDuration = Duration.zero;
   DateTime? _sessionStartTime;
   String _vehicleName = "";
   String _registrationNumber = "";
   bool _isSessionCompleted = false;
   bool _isRecovering = false;
+  bool _isLoadingDialogShowing = false;
+  bool _isInvoiceSheetShowing = false;
 
+  int? _currentSessionId;
+  bool _isLoading = false;
+  bool _hasError = false;
+  String? _errorMessage;
+
+  bool _isMounted = false;
+  Timer? _uiDebounceTimer;
+
+  int _safeToInt(dynamic value, {int defaultValue = 0}) {
+    if (value == null) return defaultValue;
+    if (value is int) return value;
+    if (value is double) {
+      if (value.isNaN || value.isInfinite) {
+        return defaultValue;
+      }
+      return value.toInt();
+    }
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      if (parsed != null) {
+        if (parsed.isNaN || parsed.isInfinite) {
+          return defaultValue;
+        }
+        return parsed.toInt();
+      }
+      return defaultValue;
+    }
+    return defaultValue;
+  }
+
+  double _safeToDouble(dynamic value, {double defaultValue = 0.0}) {
+    if (value == null) return defaultValue;
+    if (value is double) {
+      if (value.isNaN || value.isInfinite) {
+        return defaultValue;
+      }
+      return value;
+    }
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      if (parsed != null) {
+        if (parsed.isNaN || parsed.isInfinite) {
+          return defaultValue;
+        }
+        return parsed;
+      }
+      return defaultValue;
+    }
+    return defaultValue;
+  }
+
+  bool _isValidDuration(Duration duration) {
+    try {
+      final seconds = duration.inSeconds;
+      if (seconds.isNaN || seconds.isInfinite) {
+        return false;
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  String getDisplayStatus() {
+    if (_liveChargingController.currentLiveData == null) return "Charging";
+    final data = _liveChargingController.currentLiveData!;
+    if (data.isSuspended) return "SUSPENDED ⏸️";
+    if (data.isFinishing) return "FINISHING ⏳";
+    if (data.isCharging) return "CHARGING ⚡";
+    if (data.isCompleted) return "COMPLETED ✅";
+    if (data.hasError) return "INTERRUPTED ❌";
+    if (data.isPreparing) return "PREPARING 🔄";
+    return data.phase.toUpperCase();
+  }
+
+  Color getStatusColor() {
+    if (_liveChargingController.currentLiveData == null) return Colors.grey;
+    final data = _liveChargingController.currentLiveData!;
+    if (data.isSuspended) return Colors.orange;
+    if (data.isFinishing) return Colors.blue;
+    if (data.isCharging) return Appcolor.green;
+    if (data.isCompleted) return Appcolor.green;
+    if (data.hasError) return Colors.red;
+    if (data.isPreparing) return Colors.amber;
+    return Colors.grey;
+  }
+
+  // ==================== VEHICLE DATA LOADING ====================
+
+  /// ✅ Load vehicle details from storage (same pattern as session ID)
+  Future<void> _loadVehicleDetailsFromStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Get session ID
+      int? sessionId = widget.chargingDetails?['sessionId'] ??
+          prefs.getInt('active_session_id') ??
+          prefs.getInt('session_id');
+
+      String vehicleName = '';
+      String registration = '';
+
+      // ✅ 1. Try session-specific vehicle details first (most reliable)
+      if (sessionId != null && sessionId > 0) {
+        vehicleName = prefs.getString('session_${sessionId}_vehicle_name') ?? '';
+        registration = prefs.getString('session_${sessionId}_vehicle_registration') ?? '';
+      }
+
+      // ✅ 2. Fallback to generic vehicle details
+      if (vehicleName.isEmpty) {
+        vehicleName = prefs.getString('vehicle_name') ?? 'Unknown Vehicle';
+        registration = prefs.getString('vehicle_registration') ?? 'N/A';
+      }
+
+      // ✅ 3. Fallback to widget details
+      if (vehicleName == 'Unknown Vehicle' && widget.chargingDetails != null) {
+        final widgetName = widget.chargingDetails!['vehicleName']?.toString() ?? '';
+        final widgetRegistration = widget.chargingDetails!['registrationNumber']?.toString() ?? '';
+        if (widgetName.isNotEmpty) {
+          vehicleName = widgetName;
+          registration = widgetRegistration.isNotEmpty ? widgetRegistration : 'N/A';
+        }
+      }
+
+      setState(() {
+        _vehicleName = vehicleName;
+        _registrationNumber = registration;
+      });
+
+      print('✅ Vehicle details loaded from storage:');
+      print('   Vehicle: $vehicleName');
+      print('   Registration: $registration');
+      print('   Session ID: ${sessionId ?? 'null'}');
+
+    } catch (e) {
+      print('⚠️ Error loading vehicle details from storage: $e');
+    }
+  }
+
+  /// ✅ Save vehicle details to storage (for persistence)
+  Future<void> _saveVehicleDetailsToStorage({
+    required int sessionId,
+    required String vehicleName,
+    required String registrationNumber,
+    required String manufacturer,
+    required String model,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Save generic vehicle details
+      await prefs.setString('vehicle_name', vehicleName);
+      await prefs.setString('vehicle_registration', registrationNumber);
+      await prefs.setString('vehicle_manufacturer', manufacturer);
+      await prefs.setString('vehicle_model', model);
+
+      // ✅ Save session-specific vehicle details (keyed by session ID)
+      await prefs.setString('session_${sessionId}_vehicle_name', vehicleName);
+      await prefs.setString('session_${sessionId}_vehicle_registration', registrationNumber);
+      await prefs.setString('session_${sessionId}_vehicle_manufacturer', manufacturer);
+      await prefs.setString('session_${sessionId}_vehicle_model', model);
+
+      print('✅ Vehicle details saved to storage:');
+      print('   Session ID: $sessionId');
+      print('   Vehicle: $vehicleName');
+      print('   Registration: $registrationNumber');
+
+    } catch (e) {
+      print('❌ Error saving vehicle details: $e');
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _isMounted = true;
+    WidgetsBinding.instance.addObserver(this);
+
+    print('\n🔍 ========== CHARGING PROGRESS PAGE INIT ==========');
+    print('📋 Charging Details:');
+    print('   Session ID: ${widget.chargingDetails?['sessionId']}');
+    print('   Vehicle Name: ${widget.chargingDetails?['vehicleName']}');
+    print('   Status: ${widget.chargingDetails?['status']}');
+    print('   Phase: ${widget.chargingDetails?['phase']}');
+    print('==========================================\n');
 
     if (widget.chargingDetails != null) {
-      _vehicleName = widget.chargingDetails!['vehicleName'] ??
-          "${widget.chargingDetails!['manufacturer'] ?? ''} ${widget.chargingDetails!['model'] ?? ''}".trim();
-      _registrationNumber = widget.chargingDetails!['registrationNumber'] ?? "N/A";
+      print('📋 Full charging details:');
+      widget.chargingDetails!.forEach((key, value) {
+        print('   $key: $value');
+      });
+    }
+
+    // ✅ Load vehicle details from storage FIRST
+    _loadVehicleDetailsFromStorage();
+
+    // ✅ If widget has vehicle details, save them to storage
+    if (widget.chargingDetails != null) {
+      final sessionId = widget.chargingDetails!['sessionId'];
+      final vehicleName = widget.chargingDetails!['vehicleName']?.toString() ?? '';
+      final registration = widget.chargingDetails!['registrationNumber']?.toString() ?? '';
+      final manufacturer = widget.chargingDetails!['manufacturer']?.toString() ?? '';
+      final model = widget.chargingDetails!['model']?.toString() ?? '';
+
+      if (sessionId != null && sessionId > 0 && vehicleName.isNotEmpty) {
+        _saveVehicleDetailsToStorage(
+          sessionId: sessionId,
+          vehicleName: vehicleName,
+          registrationNumber: registration,
+          manufacturer: manufacturer,
+          model: model,
+        );
+      }
+
+      // Set initial values from widget if storage didn't have them
+      if (vehicleName.isNotEmpty && _vehicleName.isEmpty) {
+        _vehicleName = vehicleName;
+        _registrationNumber = registration.isNotEmpty ? registration : 'N/A';
+      }
     }
 
     _liveChargingController = LiveChargingController();
 
     int? sessionId = widget.chargingDetails?['sessionId'];
 
-    if (sessionId == null) {
-      print('⚠️ No session ID provided, attempting to recover...');
-      _recoverAndStartPolling();
-    } else {
-      // First fetch the full data, then start polling
-      _fetchFullDataAndStartPolling(sessionId);
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_isMounted) return;
+      _showLoadingDialog();
+      _initializeSession(sessionId);
+    });
 
-    _liveChargingController.addListener(_onLiveDataUpdate);
     _liveChargingController.addListener(_onControllerUpdate);
     _startDurationTimer();
+    _startAutoRefreshTimer();
+  }
+
+  void _initializeSession(int? sessionId) {
+    if (sessionId != null && sessionId > 0) {
+      print('✅ Valid session ID found: $sessionId');
+      _fetchFullDataAndStartPolling(sessionId);
+    } else {
+      print('⚠️ No valid session ID. Will poll for active session...');
+      _recoverAndStartPolling();
+    }
+  }
+
+  // ==================== LIFECYCLE MANAGEMENT ====================
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (!_isMounted) return;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        print('📱 App resumed - refreshing charging status');
+        if (_currentSessionId != null && !_isSessionCompleted) {
+          _liveChargingController.fetchLiveChargingStatus(
+            sessionId: _currentSessionId,
+          );
+        }
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        print('📱 App paused - reducing activity');
+        _liveChargingController.onAppPaused();
+        break;
+      case AppLifecycleState.detached:
+        print('📱 App detached - cleaning up');
+        _liveChargingController.onAppPaused();
+        break;
+    }
+  }
+
+  void _showLoadingDialog() {
+    if (_isLoadingDialogShowing) return;
+    if (!_isMounted) return;
+    if (!mounted) return;
+
+    _isLoadingDialogShowing = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false,
+        child: Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  "Loading Please wait...",
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Appcolor.black,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Please wait while we connect to the charger...",
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.info_outline, size: 14, color: Colors.grey.shade600),
+                          const SizedBox(width: 6),
+                          Text(
+                            "This may take a few moments",
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Please ensure the connector is properly plugged in",
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: Colors.grey.shade500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    _hideLoadingDialog();
+                    if (_isMounted) {
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: Text(
+                    "Cancel",
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.red.shade400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _hideLoadingDialog() {
+    _isLoadingDialogShowing = false;
+    if (_isMounted) {
+      try {
+        Navigator.pop(context);
+      } catch (e) {
+        // Dialog might already be dismissed
+      }
+    }
+  }
+
+  void _updateLoadingDialogMessage(String message) {
+    print('📱 Loading message: $message');
+  }
+
+  void _showInvoiceBottomSheet() {
+    if (_isInvoiceSheetShowing) return;
+    _isInvoiceSheetShowing = true;
+
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return Container(
+          height: 300,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(30),
+              topRight: Radius.circular(30),
+            ),
+          ),
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'Generating invoice...',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Please wait while we prepare your invoice',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ).then((_) {
+      _isInvoiceSheetShowing = false;
+    });
+
+    // Fetch invoice data with retry
+    _fetchInvoiceData(maxRetries: 15, retryDelaySeconds: 2).then((_) {
+      if (!_isMounted) return;
+
+      // Close the loading bottom sheet
+      Navigator.pop(context);
+
+      // Show the actual invoice sheet
+      _showInvoiceSheet();
+    });
+  }
+
+  void _showInvoiceSheet() {
+    if (!_isMounted) return;
+
+    _isInvoiceSheetShowing = true;
+
+    showModalBottomSheet(
+      context: context,
+      isDismissible: true,
+      enableDrag: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return InvoiceBottomSheet(
+          invoiceController: _invoiceController,
+          onClosed: () {
+            _isInvoiceSheetShowing = false;
+            _navigateToScanner();
+          },
+        );
+      },
+    ).then((_) {
+      _isInvoiceSheetShowing = false;
+      if (_isMounted) {
+        _navigateToScanner();
+      }
+    });
+  }
+
+  void _scheduleInvoiceAfterInterruption({String? message}) {
+    if (!_isMounted || _isSessionCompleted) return;
+
+    _isSessionCompleted = true;
+    _durationTimer?.cancel();
+    _liveChargingController.stopPolling();
+    stopPolling();
+    _hideLoadingDialog();
+
+    if (_isMounted && message != null && message.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+
+    Future.delayed(const Duration(seconds: 12), () {
+      if (!_isMounted || !mounted || _isInvoiceSheetShowing) return;
+      _showInvoiceBottomSheet();
+    });
+  }
+
+  Future<void> _fetchInvoiceData({int maxRetries = 10, int retryDelaySeconds = 2}) async {
+    try {
+      // Get session ID from multiple sources
+      int? sessionId = _currentSessionId;
+
+      if (sessionId == null || sessionId <= 0) {
+        sessionId = widget.chargingDetails?['sessionId'];
+      }
+
+      if (sessionId == null || sessionId <= 0) {
+        sessionId = _stopChargingController.stopResponse?.data?.sessionId;
+      }
+
+      if (sessionId == null || sessionId <= 0) {
+        final prefs = await SharedPreferences.getInstance();
+        sessionId = prefs.getInt('session_id');
+      }
+
+      if (sessionId == null || sessionId <= 0) {
+        print('⚠️ No session ID available for invoice');
+        if (_isMounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No session ID found for invoice'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      print('📋 Fetching invoice for session: $sessionId');
+
+      int retryCount = 0;
+      bool success = false;
+
+      while (retryCount < maxRetries && !success) {
+        try {
+          success = await _invoiceController.fetchInvoice(sessionId);
+
+          if (success && _invoiceController.invoiceResponse != null) {
+            print('✅ Invoice fetched successfully');
+            print('   Invoice #: ${_invoiceController.invoiceResponse?.data.invoiceNumber}');
+            print('   Total: ${_invoiceController.invoiceResponse?.data.billing.total}');
+            break;
+          }
+
+          final errorMsg = _invoiceController.errorMessage ?? '';
+          if (InvoiceService.shouldRetryInvoiceRequest(errorMsg)) {
+            retryCount++;
+            print('⏳ Session not completed yet, retrying in ${retryDelaySeconds}s... (Attempt $retryCount/$maxRetries)');
+
+            if (_isMounted && retryCount <= maxRetries) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Waiting for session to complete... ($retryCount/$maxRetries)'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: retryDelaySeconds),
+                ),
+              );
+            }
+
+            await Future.delayed(Duration(seconds: retryDelaySeconds));
+          } else {
+            print('⚠️ Failed to fetch invoice: ${_invoiceController.errorMessage}');
+            break;
+          }
+        } catch (e) {
+          print('❌ Error fetching invoice (attempt $retryCount): $e');
+          retryCount++;
+          if (retryCount < maxRetries) {
+            await Future.delayed(Duration(seconds: retryDelaySeconds));
+          }
+        }
+      }
+
+      if (!success && _isMounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Invoice not ready yet. Please try again later.'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+
+    } catch (e) {
+      print('❌ Error fetching invoice: $e');
+    }
+  }
+
+  void _startPolling(int sessionId) {
+    _currentSessionId = sessionId;
+    _isLoading = false;
+    _hasError = false;
+    _errorMessage = null;
+
+    _pollingTimer?.cancel();
+    _refreshTimer?.cancel();
+
+    _liveChargingController.startPolling(
+      sessionId: sessionId,
+      interval: const Duration(seconds: 10),
+    );
+    _startAutoRefreshTimer();
+  }
+
+  void stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+    _liveChargingController.stopPolling();
   }
 
   Future<void> _fetchFullDataAndStartPolling(int sessionId) async {
+    if (!_isMounted) return;
+
     setState(() {
       _isRecovering = true;
     });
 
     try {
       print('📡 Fetching full session data for ID: $sessionId');
+      await ChargingSessionService.saveSessionIdOnly(sessionId);
+      print('💾 Session ID saved to SharedPreferences: $sessionId');
 
-      // Fetch full live data
-      final success = await _liveChargingController.fetchLiveChargingStatus(sessionId: sessionId);
+      final success = await _liveChargingController.fetchLiveChargingStatus(
+        sessionId: sessionId,
+      );
+
+      if (!_isMounted) return;
 
       if (success && _liveChargingController.currentLiveData != null) {
         print('✅ Full session data fetched successfully');
-
-        // Update vehicle info from live data
         final liveData = _liveChargingController.currentLiveData!;
-        if (liveData.vehicle != null) {
-          setState(() {
-            _vehicleName = '${liveData.vehicle?.manufacturer ?? ''} ${liveData.vehicle?.model ?? ''}'.trim();
-            if (_vehicleName.isEmpty) {
-              _vehicleName = widget.chargingDetails?['vehicleName'] ?? 'Unknown Vehicle';
-            }
-            _registrationNumber = liveData.vehicle?.registrationNumber ??
-                widget.chargingDetails?['registrationNumber'] ?? 'N/A';
-          });
+
+        if (liveData.sessionId != sessionId) {
+          print('⚠️ Session mismatch: expected $sessionId, got ${liveData.sessionId}');
+          _recoverAndStartPolling();
+          return;
         }
 
-        // Start polling
+        _saveSessionDataInBackground(liveData);
+
+        // ✅ Update vehicle details from live data if available
+        if (liveData.vehicle != null) {
+          final manufacturer = liveData.vehicle?.manufacturer ?? '';
+          final model = liveData.vehicle?.model ?? '';
+          final registration = liveData.vehicle?.registrationNumber ?? '';
+          final vehicleName = '$manufacturer $model'.trim();
+
+          if (vehicleName.isNotEmpty) {
+            setState(() {
+              _vehicleName = vehicleName;
+              _registrationNumber = registration.isNotEmpty ? registration : 'N/A';
+            });
+
+            // ✅ Save to storage for persistence
+            await _saveVehicleDetailsToStorage(
+              sessionId: sessionId,
+              vehicleName: vehicleName,
+              registrationNumber: registration,
+              manufacturer: manufacturer,
+              model: model,
+            );
+          }
+        }
+
+        if (liveData.isCompleted) {
+          print('⚠️ Session is already completed');
+          _isSessionCompleted = true;
+          _liveChargingController.stopPolling();
+          _hideLoadingDialog();
+          _showInvoiceBottomSheet();
+          return;
+        }
+
+        _hideLoadingDialog();
         _startPolling(sessionId);
       } else {
         print('❌ Failed to fetch full session data');
-        // Try to recover from server
-        final recovered = await _liveChargingController.recoverActiveSession();
-        if (recovered && _liveChargingController.currentLiveData != null) {
-          final newSessionId = _liveChargingController.currentLiveData!.sessionId;
-          print('✅ Session recovered from server: $newSessionId');
-          _startPolling(newSessionId);
-        } else {
-          print('❌ Could not recover session');
-          _showErrorAndGoBack('No active charging session found');
-        }
+        _recoverAndStartPolling();
       }
     } catch (e) {
       print('❌ Error fetching session data: $e');
+      _hideLoadingDialog();
       _showErrorAndGoBack('Error fetching session data');
     } finally {
-      if (mounted) {
+      if (_isMounted) {
         setState(() {
           _isRecovering = false;
         });
@@ -112,48 +749,135 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
     }
   }
 
+  void _saveSessionDataInBackground(LiveChargingData data) {
+    unawaited(_saveSessionDataAsync(data));
+  }
+
+  Future<void> _saveSessionDataAsync(LiveChargingData data) async {
+    try {
+      await ChargingSessionService.saveActiveSession(
+        sessionId: data.sessionId,
+        startedAt: data.startedAt,
+        status: data.status,
+        phase: data.phase,
+        transactionId: data.transactionId,
+      );
+      print('💾 Active session saved with status: ${data.status}');
+    } catch (e) {
+      print('⚠️ Error saving session data: $e');
+    }
+  }
+
   Future<void> _recoverAndStartPolling() async {
+    if (!_isMounted) return;
+
     setState(() {
       _isRecovering = true;
     });
 
     try {
-      // Try to get session from storage
+      print('🔄 Attempting to recover active session...');
+
       final sessionData = await ChargingSessionService.getActiveSessionData();
 
       if (sessionData != null && sessionData['sessionId'] != null) {
         final sessionId = sessionData['sessionId'];
-        print('✅ Recovered session ID: $sessionId');
+        if (sessionId is int && sessionId > 0) {
+          print('✅ Recovered session ID from storage: $sessionId');
+          final success = await _liveChargingController.fetchLiveChargingStatus(
+            sessionId: sessionId,
+          );
 
-        // Try to fetch live data
-        final success = await _liveChargingController.fetchLiveChargingStatus(sessionId: sessionId);
+          if (!_isMounted) return;
 
-        if (success && _liveChargingController.currentLiveData != null) {
-          print('✅ Session data fetched successfully');
-          _startPolling(sessionId);
-        } else {
-          // Try to recover from server
-          print('🔄 Trying to recover from server...');
-          final recovered = await _liveChargingController.recoverActiveSession();
-
-          if (recovered && _liveChargingController.currentLiveData != null) {
-            final newSessionId = _liveChargingController.currentLiveData!.sessionId;
-            print('✅ Session recovered from server: $newSessionId');
-            _startPolling(newSessionId);
-          } else {
-            print('❌ Could not recover session');
-            _showErrorAndGoBack('No active charging session found');
+          if (success && _liveChargingController.currentLiveData != null) {
+            final liveData = _liveChargingController.currentLiveData!;
+            if (!liveData.isCompleted) {
+              print('✅ Active session found: $sessionId');
+              _hideLoadingDialog();
+              _startPolling(sessionId);
+              setState(() {
+                _isRecovering = false;
+              });
+              return;
+            } else {
+              print('⚠️ Session is completed');
+            }
           }
         }
-      } else {
-        print('❌ No session data found');
-        _showErrorAndGoBack('No active charging session found');
+      }
+
+      print('🔄 Polling live API for active session...');
+      _updateLoadingDialogMessage('Connecting to charger...');
+
+      int retryCount = 0;
+      const maxRetries = 15;
+      bool foundActiveSession = false;
+
+      while (retryCount < maxRetries && !foundActiveSession && _isMounted) {
+        await Future.delayed(const Duration(seconds: 3));
+
+        if (retryCount % 3 == 0) {
+          _updateLoadingDialogMessage(
+              'Waiting for charger response... (${(retryCount + 1) * 3}s)'
+          );
+        }
+
+        final success = await _liveChargingController.fetchLiveChargingStatus();
+
+        if (!_isMounted) break;
+
+        if (success && _liveChargingController.currentLiveData != null) {
+          final liveData = _liveChargingController.currentLiveData!;
+          if (!liveData.isCompleted) {
+            final sessionId = liveData.sessionId;
+            print('✅ Found active session after polling: $sessionId');
+            print('   Status: ${liveData.status}');
+            print('   Phase: ${liveData.phase}');
+
+            await ChargingSessionService.saveSessionIdOnly(sessionId);
+            await ChargingSessionService.saveActiveSession(
+              sessionId: sessionId,
+              startedAt: liveData.startedAt,
+              status: liveData.status,
+              phase: liveData.phase,
+              transactionId: liveData.transactionId,
+            );
+
+            _hideLoadingDialog();
+            _startPolling(sessionId);
+            foundActiveSession = true;
+            setState(() {
+              _isRecovering = false;
+            });
+            return;
+          } else {
+            print('⏳ Session is in terminal state: ${liveData.status}, retrying...');
+          }
+        }
+        retryCount++;
+      }
+
+      if (!foundActiveSession && _isMounted) {
+        print('❌ No active session found after polling');
+        _hideLoadingDialog();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Charger did not start. Please check the charger status.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        _scheduleNavigationToScanner();
       }
     } catch (e) {
       print('❌ Error recovering session: $e');
+      _hideLoadingDialog();
       _showErrorAndGoBack('Error recovering session');
     } finally {
-      if (mounted) {
+      if (_isMounted) {
         setState(() {
           _isRecovering = false;
         });
@@ -161,15 +885,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
     }
   }
 
-  void _startPolling(int sessionId) {
-    _liveChargingController.startPolling(
-      sessionId: sessionId,
-      interval: const Duration(seconds: 5),
-    );
-  }
-
   void _showErrorAndGoBack(String message) {
-    if (!mounted) return;
+    if (!_isMounted) return;
+    _hideLoadingDialog();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -179,81 +897,155 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
       ),
     );
 
+    _scheduleNavigationToScanner();
+  }
+
+  void _scheduleNavigationToScanner() {
     Future.delayed(const Duration(seconds: 2), () {
+      if (_isMounted) {
+        _navigateToScanner();
+      }
+    });
+  }
+
+  void _navigateToScanner() {
+    if (!_isMounted) return;
+    _clearSessionData();
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const ScannerPage()),
+          (route) => false,
+    );
+  }
+
+  void _startAutoRefreshTimer() {
+    _refreshTimer?.cancel();
+
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      if (!_isMounted || !mounted || _isSessionCompleted) {
+        _refreshTimer?.cancel();
+        _refreshTimer = null;
+        return;
+      }
+
+      final liveData = _liveChargingController.currentLiveData;
+      final shouldRefresh = liveData == null ||
+          liveData.isCharging ||
+          liveData.isPreparing ||
+          liveData.isSuspended ||
+          liveData.isFinishing;
+
+      if (!shouldRefresh) {
+        _refreshTimer?.cancel();
+        _refreshTimer = null;
+        return;
+      }
+
+      final sessionId = _currentSessionId ??
+          widget.chargingDetails?['sessionId'] ??
+          _liveChargingController.currentSessionId;
+
+      if (sessionId == null || sessionId <= 0) {
+        return;
+      }
+
+      print('🔄 Auto-refreshing charging data every 10 seconds');
+      await _liveChargingController.fetchLiveChargingStatus(sessionId: sessionId);
       if (mounted) {
-        Navigator.pop(context);
+        setState(() {});
       }
     });
   }
 
   void _onControllerUpdate() {
-    // Check if session is completed
-    if (_liveChargingController.shouldShowCompletion && mounted && !_isSessionCompleted) {
-      print('🔴 Session completed - Showing completion bottom sheet');
-      _isSessionCompleted = true;
-      _durationTimer?.cancel();
-      _liveChargingController.stopPolling();
+    _uiDebounceTimer?.cancel();
+    _uiDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+      if (!_isMounted) return;
+      _processControllerUpdate();
+    });
+  }
 
-      // Show completion bottom sheet
-      _showCompletionBottomSheetForCompletedSession();
+  void _processControllerUpdate() {
+    print('🔄 ChargingProgressPage: Controller updated');
+
+    if (_liveChargingController.isNoActiveSession && _isMounted) {
+      print('⚠️ No active session detected - delaying invoice generation briefly');
+      _scheduleInvoiceAfterInterruption(
+        message: 'Connection interrupted. Preparing invoice in a moment...',
+      );
+      return;
     }
 
-    // Check if session has error
-    if (_liveChargingController.hasError && mounted) {
+    if (_liveChargingController.currentLiveData != null) {
+      final data = _liveChargingController.currentLiveData!;
+
+      if (data.isCompleted && _isMounted && !_isSessionCompleted) {
+        print('🔴 Session completed');
+        print('   Status: ${data.status}');
+        print('   Phase: ${data.phase}');
+
+        _isSessionCompleted = true;
+        _durationTimer?.cancel();
+        _liveChargingController.stopPolling();
+        stopPolling();
+        _hideLoadingDialog();
+        _showInvoiceBottomSheet();
+        return;
+      }
+    }
+
+    if (_liveChargingController.hasError && _isMounted) {
+      if (_liveChargingController.isNoActiveSession) {
+        return;
+      }
+
+      final errorMessage = (_liveChargingController.errorMessage ?? '').toLowerCase();
+      final isConnectionIssue = errorMessage.contains('network') ||
+          errorMessage.contains('socket') ||
+          errorMessage.contains('connection') ||
+          errorMessage.contains('timeout') ||
+          errorMessage.contains('internet');
+
       print('❌ Session error: ${_liveChargingController.errorMessage}');
+
+      if (isConnectionIssue) {
+        _scheduleInvoiceAfterInterruption(
+          message: 'Connection interrupted. Preparing invoice in a moment...',
+        );
+        return;
+      }
+
       _isSessionCompleted = true;
       _durationTimer?.cancel();
       _liveChargingController.stopPolling();
+      stopPolling();
+      _hideLoadingDialog();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_liveChargingController.errorMessage ?? 'Charging error'),
+          content: Text(
+            _liveChargingController.errorMessage ?? 'Charging error',
+          ),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 2),
         ),
       );
 
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          Navigator.pop(context);
-        }
-      });
-    }
-
-    // Check if session is preparing (keep polling)
-    if (_liveChargingController.isPreparing && mounted) {
-      print('⏳ Session is preparing, continuing polling...');
+      _scheduleNavigationToScanner();
+      return;
     }
   }
 
-  void _onLiveDataUpdate() {
-    // Check if status is completed or stopped
-    final status = _liveChargingController.currentLiveData?.status?.toLowerCase();
-    if ((status == 'completed' || status == 'stopped') && mounted && !_isSessionCompleted) {
-      print('🔴 Session status: $status - Session completed');
-      _isSessionCompleted = true;
-      _durationTimer?.cancel();
-
-      // Show completion bottom sheet
-      _showCompletionBottomSheetForCompletedSession();
-    }
-
-    // Update session start time
-    if (_sessionStartTime == null && _liveChargingController.currentLiveData != null) {
-      final startedAtRaw = _liveChargingController.currentLiveData?.startedAt;
-
-      if (startedAtRaw != null) {
-        _sessionStartTime = _parseDateTime(startedAtRaw);
-
-        if (_sessionStartTime == null) {
-          final elapsed = _liveChargingController.currentLiveData?.elapsedTime;
-          if (elapsed != null) {
-            final elapsedDuration = _extractDurationFromElapsedTime(elapsed);
-            if (elapsedDuration != null) {
-              _sessionStartTime = DateTime.now().subtract(elapsedDuration);
-            }
-          }
-        }
-      }
+  void _saveFinalSessionStatus(LiveChargingData data) async {
+    try {
+      await ChargingSessionService.saveActiveSession(
+        sessionId: data.sessionId,
+        startedAt: data.startedAt,
+        status: data.status,
+      );
+      print('💾 Final session status saved: ${data.status}');
+    } catch (e) {
+      print('❌ Error saving final status: $e');
     }
   }
 
@@ -263,29 +1055,52 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
     try {
       if (elapsedTime is Map) {
         final seconds = elapsedTime['seconds'];
-        if (seconds is int) return Duration(seconds: seconds);
-        if (seconds is double) return Duration(seconds: seconds.toInt());
-      }
-
-      if (elapsedTime is dynamic) {
-        if (elapsedTime.seconds != null) return Duration(seconds: elapsedTime.seconds as int);
-        if (elapsedTime.inSeconds != null) return Duration(seconds: elapsedTime.inSeconds as int);
-        if (elapsedTime.totalSeconds != null) return Duration(seconds: elapsedTime.totalSeconds as int);
-
-        final elapsedStr = elapsedTime.toString();
-        if (elapsedStr.contains('seconds:')) {
-          final regex = RegExp(r'seconds:\s*(\d+)');
-          final match = regex.firstMatch(elapsedStr);
-          if (match != null) {
-            final seconds = int.tryParse(match.group(1)!);
-            if (seconds != null) return Duration(seconds: seconds);
-          }
+        if (seconds != null) {
+          final safeSeconds = _safeToInt(seconds);
+          return Duration(seconds: safeSeconds);
         }
       }
 
-      if (elapsedTime is int) return Duration(seconds: elapsedTime);
-      if (elapsedTime is double) return Duration(seconds: elapsedTime.toInt());
-      if (elapsedTime is Duration) return elapsedTime;
+      if (elapsedTime is int) {
+        return Duration(seconds: elapsedTime);
+      }
+
+      if (elapsedTime is double) {
+        final safeSeconds = _safeToInt(elapsedTime);
+        return Duration(seconds: safeSeconds);
+      }
+
+      if (elapsedTime is Duration) {
+        if (_isValidDuration(elapsedTime)) {
+          return elapsedTime;
+        }
+        return Duration.zero;
+      }
+
+      if (elapsedTime.toString().contains('seconds:')) {
+        final regex = RegExp(r'seconds:\s*(\d+)');
+        final match = regex.firstMatch(elapsedTime.toString());
+        if (match != null) {
+          final seconds = int.tryParse(match.group(1)!);
+          if (seconds != null) return Duration(seconds: seconds);
+        }
+      }
+
+      try {
+        final seconds = (elapsedTime as dynamic).seconds;
+        if (seconds != null) {
+          final safeSeconds = _safeToInt(seconds);
+          return Duration(seconds: safeSeconds);
+        }
+      } catch (_) {}
+
+      try {
+        final inSeconds = (elapsedTime as dynamic).inSeconds;
+        if (inSeconds != null) {
+          final safeSeconds = _safeToInt(inSeconds);
+          return Duration(seconds: safeSeconds);
+        }
+      } catch (_) {}
     } catch (e) {
       print('Error extracting duration: $e');
     }
@@ -293,32 +1108,31 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
     return null;
   }
 
-  DateTime? _parseDateTime(dynamic dateTime) {
-    if (dateTime == null) return null;
-
-    if (dateTime is DateTime) {
-      return dateTime;
-    } else if (dateTime is String) {
-      return DateTime.tryParse(dateTime);
-    } else if (dateTime is int) {
-      return DateTime.fromMillisecondsSinceEpoch(dateTime);
-    }
-    return null;
-  }
-
   Duration _parseDuration(dynamic duration) {
     if (duration == null) return Duration.zero;
 
     final extracted = _extractDurationFromElapsedTime(duration);
-    if (extracted != null) return extracted;
+    if (extracted != null && _isValidDuration(extracted)) {
+      return extracted;
+    }
 
     if (duration is Duration) {
-      return duration;
-    } else if (duration is int) {
+      if (_isValidDuration(duration)) {
+        return duration;
+      }
+      return Duration.zero;
+    }
+
+    if (duration is int) {
       return Duration(seconds: duration);
-    } else if (duration is double) {
-      return Duration(milliseconds: (duration * 1000).round());
-    } else if (duration is String) {
+    }
+
+    if (duration is double) {
+      final safeSeconds = _safeToInt(duration);
+      return Duration(seconds: safeSeconds);
+    }
+
+    if (duration is String) {
       final parts = duration.split(':');
       if (parts.length == 3) {
         return Duration(
@@ -332,412 +1146,160 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
     return Duration.zero;
   }
 
+  DateTime? _parseDateTime(dynamic dateTime) {
+    if (dateTime == null) return null;
+    if (dateTime is DateTime) {
+      return dateTime;
+    } else if (dateTime is String) {
+      return DateTime.tryParse(dateTime);
+    } else if (dateTime is int) {
+      return DateTime.fromMillisecondsSinceEpoch(dateTime);
+    }
+    return null;
+  }
+
   void _startDurationTimer() {
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
+      if (!_isMounted) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        try {
           if (_sessionStartTime != null) {
             _currentDuration = DateTime.now().difference(_sessionStartTime!);
+            if (!_isValidDuration(_currentDuration)) {
+              _currentDuration = Duration.zero;
+            }
           } else if (_liveChargingController.currentLiveData != null) {
             final elapsed = _liveChargingController.currentLiveData?.elapsedTime;
-            _currentDuration = _parseDuration(elapsed);
+
+            if (elapsed != null) {
+              final parsedDuration = _parseDuration(elapsed);
+              if (_isValidDuration(parsedDuration)) {
+                _currentDuration = parsedDuration;
+              } else {
+                _currentDuration = Duration.zero;
+              }
+            }
 
             final startedAtRaw = _liveChargingController.currentLiveData?.startedAt;
+
             if (startedAtRaw != null) {
               _sessionStartTime = _parseDateTime(startedAtRaw);
+
               if (_sessionStartTime == null && elapsed != null) {
                 final elapsedDuration = _extractDurationFromElapsedTime(elapsed);
-                if (elapsedDuration != null) {
+                if (elapsedDuration != null && _isValidDuration(elapsedDuration)) {
                   _sessionStartTime = DateTime.now().subtract(elapsedDuration);
+                } else {
+                  _sessionStartTime = DateTime.now();
                 }
               }
             }
           } else {
             _currentDuration = Duration.zero;
           }
-        });
-      }
+        } catch (e) {
+          print('Error updating duration: $e');
+          _currentDuration = Duration.zero;
+        }
+      });
     });
   }
 
   String get _formattedRunningDuration {
-    if (_currentDuration.inHours > 0) {
-      final hours = _currentDuration.inHours;
-      final minutes = (_currentDuration.inMinutes % 60).toString().padLeft(2, '0');
-      final seconds = (_currentDuration.inSeconds % 60).toString().padLeft(2, '0');
-      return '$hours:$minutes:$seconds';
-    } else {
-      final minutes = _currentDuration.inMinutes;
-      final seconds = (_currentDuration.inSeconds % 60).toString().padLeft(2, '0');
-      return '$minutes:$seconds';
+    try {
+      final duration = _currentDuration;
+      if (!_isValidDuration(duration)) {
+        return '0:00';
+      }
+      if (duration.inHours > 0) {
+        final hours = duration.inHours;
+        final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
+        final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+        return '$hours:$minutes:$seconds';
+      } else {
+        final minutes = duration.inMinutes;
+        final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+        return '$minutes:$seconds';
+      }
+    } catch (e) {
+      print('Error formatting duration: $e');
+      return '0:00';
     }
   }
 
   @override
   void dispose() {
-    _liveChargingController.removeListener(_onLiveDataUpdate);
+    _isMounted = false;
+    _uiDebounceTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _liveChargingController.removeListener(_onControllerUpdate);
     _liveChargingController.stopPolling();
     _liveChargingController.dispose();
     _stopChargingController.dispose();
     _durationTimer?.cancel();
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+    stopPolling();
+    _hideLoadingDialog();
     super.dispose();
   }
 
-// Update this method in ChargingProgressPage
-
-  void _showCompletionBottomSheetForCompletedSession() {
-    // Build data from current live data
-    final data = _liveChargingController.currentLiveData;
-    if (data == null) {
-      // If no data, just navigate back
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const ScannerPage()),
-                (route) => false,
-          );
-        }
-      });
+  void _clearSessionData() {
+    try {
+      ActiveSessionService.clearSessionFromStorage();
+      print('🗑️ Session cleared using ActiveSessionService.clearSessionFromStorage()');
       return;
+    } catch (e) {
+      print('⚠️ Error using ActiveSessionService.clearSessionFromStorage: $e');
     }
 
-    // Create a Map from the data
-    final currency = data.billing.currency;
-    final cost = data.billing.currentCost;
-    final formattedCost = "$currency${cost.toStringAsFixed(2)}";
-    final duration = data.elapsedTime.formatted;
-    final energy = "${data.energy.consumedKwh.toStringAsFixed(2)} kWh";
-
-    final sessionData = {
-      'formattedDuration': duration,
-      'formattedEnergy': energy,
-      'formattedCost': formattedCost,
-      'status': data.status.toUpperCase(),
-      'walletBalanceAfter': data.billing.walletBalance,
-    };
-
-    _showCompletionBottomSheet(sessionData);
+    _manualClearSession();
   }
 
-  void _showCompletionBottomSheet(dynamic data) {
-    Map<String, dynamic> sessionData = {};
+  void _manualClearSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('active_session_id');
+      await prefs.remove('session_id');
+      await prefs.remove('session_status');
+      await prefs.remove('session_status_phase');
+      await prefs.remove('session_transaction_id');
+      await prefs.remove('session_started_at');
+      await prefs.remove('session_data');
+      await prefs.remove('session_id_only');
 
-    if (data == null) {
-      // Use current live data if available
-      final liveData = _liveChargingController.currentLiveData;
-      if (liveData != null) {
-        sessionData = {
-          'formattedDuration': liveData.elapsedTime.formatted,
-          'formattedEnergy': '${liveData.energy.consumedKwh.toStringAsFixed(2)} kWh',
-          'formattedCost': '${liveData.billing.currency}${liveData.billing.currentCost.toStringAsFixed(2)}',
-          'status': liveData.status.toUpperCase(),
-          'walletBalanceAfter': liveData.billing.walletBalance,
-        };
-      } else {
-        // Fallback data
-        sessionData = {
-          'formattedDuration': 'N/A',
-          'formattedEnergy': '0 kWh',
-          'formattedCost': '₹0.00',
-          'status': 'COMPLETED',
-          'walletBalanceAfter': 0.0,
-        };
+      // ✅ Clear session-specific vehicle keys
+      final sessionId = _currentSessionId;
+      if (sessionId != null) {
+        await prefs.remove('session_${sessionId}_vehicle_name');
+        await prefs.remove('session_${sessionId}_vehicle_manufacturer');
+        await prefs.remove('session_${sessionId}_vehicle_model');
+        await prefs.remove('session_${sessionId}_vehicle_registration');
+        await prefs.remove('session_${sessionId}_vehicle_id');
       }
-    } else if (data is StopChargingData) {
-      // Convert StopChargingData to Map
-      sessionData = {
-        'formattedDuration': data.formattedDuration,
-        'formattedEnergy': data.formattedEnergy,
-        'formattedCost': data.formattedCost,
-        'status': data.status.toUpperCase(),
-        'walletBalanceAfter': double.tryParse(data.walletBalanceAfter) ?? 0.0,
-      };
-    } else if (data is Map<String, dynamic>) {
-      // Already a Map
-      sessionData = data;
-    } else {
-      // Try to convert from JSON
-      try {
-        sessionData = Map<String, dynamic>.from(data);
-      } catch (e) {
-        // Fallback
-        sessionData = {
-          'formattedDuration': 'N/A',
-          'formattedEnergy': '0 kWh',
-          'formattedCost': '₹0.00',
-          'status': 'COMPLETED',
-          'walletBalanceAfter': 0.0,
-        };
-      }
+
+      print('🗑️ Session manually cleared from SharedPreferences');
+    } catch (e) {
+      print('❌ Error manually clearing session: $e');
     }
-
-    showModalBottomSheet(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(30),
-              topRight: Radius.circular(30),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Drag handle
-              Container(
-                margin: const EdgeInsets.only(top: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Success Icon
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Appcolor.green.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_circle,
-                  color: Appcolor.green,
-                  size: 50,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Title
-              Text(
-                "Charging Complete! 🎉",
-                style: GoogleFonts.poppins(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Appcolor.black,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              Text(
-                "Your EV charging session has been completed",
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Divider
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 24),
-                child: const Divider(color: Appcolor.borderGrey, thickness: 1),
-              ),
-              const SizedBox(height: 16),
-
-              // Session Summary
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  children: [
-                    _bottomSheetSummaryRow(
-                      "Duration",
-                      sessionData['formattedDuration'] ?? "N/A",
-                      Icons.timer_outlined,
-                    ),
-                    const SizedBox(height: 12),
-                    _bottomSheetSummaryRow(
-                      "Energy Consumed",
-                      sessionData['formattedEnergy'] ?? "N/A",
-                      Icons.flash_on,
-                    ),
-                    const SizedBox(height: 12),
-                    _bottomSheetSummaryRow(
-                      "Status",
-                      sessionData['status'] ?? 'COMPLETED',
-                      Icons.circle,
-                      valueColor: sessionData['status'] == 'COMPLETED'
-                          ? Appcolor.green
-                          : Colors.orange,
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Amount with highlighted style
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: Appcolor.green.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Appcolor.green.withOpacity(0.2),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.currency_rupee_rounded,
-                                color: Appcolor.green,
-                                size: 22,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                "Total Amount",
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.grey.shade700,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Text(
-                            sessionData['formattedCost'] ?? "₹0.00",
-                            style: GoogleFonts.poppins(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Appcolor.green,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Wallet Balance
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Wallet Balance",
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    Text(
-                      "₹${sessionData['walletBalanceAfter']?.toStringAsFixed(2) ?? '0.00'}",
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Appcolor.black,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Pay Button
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context); // Close bottom sheet
-                      Navigator.pushAndRemoveUntil(
-                        context,
-                        MaterialPageRoute(builder: (context) => const ScannerPage()),
-                            (route) => false,
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Appcolor.green,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.payment_rounded,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          "Pay Now",
-                          style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          sessionData['formattedCost'] ?? "₹0.00",
-                          style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white.withOpacity(0.9),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Close/Go to Home button
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context); // Close bottom sheet
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => const ScannerPage()),
-                        (route) => false,
-                  );
-                },
-                child: Text(
-                  "Go to Home",
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        );
-      },
-    );
   }
 
-  Widget _bottomSheetSummaryRow(String label, String value, IconData icon, {Color? valueColor}) {
+  Widget _bottomSheetSummaryRow(
+      String label,
+      String value,
+      IconData icon, {
+        Color? valueColor,
+      }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Row(
           children: [
-            Icon(
-              icon,
-              size: 18,
-              color: Colors.grey.shade600,
-            ),
+            Icon(icon, size: 18, color: Colors.grey.shade600),
             const SizedBox(width: 8),
             Text(
               label,
@@ -760,6 +1322,343 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
     );
   }
 
+  Future<void> _stopCharging() async {
+    // Try multiple sources to get the session ID
+    int? sessionId = widget.chargingDetails?['sessionId'];
+
+    print('🔍 Stop Charging - Widget Session ID: $sessionId');
+
+    if (sessionId == null || sessionId <= 0) {
+      sessionId = _liveChargingController.currentSessionId;
+      print('🔍 Stop Charging - Controller Session ID: $sessionId');
+    }
+
+    if (sessionId == null || sessionId <= 0) {
+      sessionId = _currentSessionId;
+      print('🔍 Stop Charging - _currentSessionId: $sessionId');
+    }
+
+    // If still null, try getting from SharedPreferences
+    if (sessionId == null || sessionId <= 0) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        sessionId = prefs.getInt('active_session_id') ??
+            prefs.getInt('session_id') ??
+            prefs.getInt('current_session_id');
+        print('🔍 Stop Charging - SharedPreferences Session ID: $sessionId');
+      } catch (e) {
+        print('⚠️ Error reading session ID from preferences: $e');
+      }
+    }
+
+    // If still no session ID, try to get it from the live data
+    if (sessionId == null || sessionId <= 0) {
+      final liveData = _liveChargingController.currentLiveData;
+      if (liveData != null && liveData.sessionId > 0) {
+        sessionId = liveData.sessionId;
+        print('🔍 Stop Charging - Live Data Session ID: $sessionId');
+      }
+    }
+
+    print('🔍 Final Session ID for stop: $sessionId');
+
+    if (sessionId == null || sessionId <= 0) {
+      print('❌ Session ID is null or invalid');
+      if (_isMounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Session ID not found. Please try again."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Show confirmation dialog
+    final shouldStop = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Stop Charging"),
+          content: const Text("Are you sure you want to stop charging?"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text("Stop"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldStop != true) return;
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  "Stopping Charging Session...",
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Please wait",
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      print('📤 Calling stop charging API with session ID: $sessionId');
+      final success = await _stopChargingController.stopChargingSession(
+        sessionId: sessionId,
+      );
+
+      if (_isMounted) {
+        Navigator.pop(context);
+      }
+
+      if (success && _isMounted) {
+        _liveChargingController.stopPolling();
+        stopPolling();
+        _durationTimer?.cancel();
+        _isSessionCompleted = true;
+        _showInvoiceBottomSheet();
+
+      } else if (_isMounted) {
+        // If stop failed, try to clear session anyway if it's already completed
+        final errorMsg = _stopChargingController.errorMessage?.toLowerCase() ?? '';
+
+        if (errorMsg.contains('not found') ||
+            errorMsg.contains('already') ||
+            errorMsg.contains('completed')) {
+          // Session is already stopped or invalid - show invoice
+          print('⚠️ Session already completed or not found - proceeding to invoice');
+          _liveChargingController.stopPolling();
+          stopPolling();
+          _durationTimer?.cancel();
+          _isSessionCompleted = true;
+          _showInvoiceBottomSheet();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                _stopChargingController.errorMessage ?? "Failed to stop charging",
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Error in _stopCharging: $e');
+      if (_isMounted) {
+        Navigator.pop(context);
+
+        if (e.toString().contains('SocketException') ||
+            e.toString().contains('TimeoutException')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Network error. Please check your connection."),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Error: ${e.toString()}"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Widget _infoCard(String title, String value) {
+    return Container(
+      height: 100,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: Appcolor.borderGrey,
+          width: 1.0,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
+              fontFamily: Appcolor.fontFamily,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: Appcolor.black,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              fontFamily: Appcolor.fontFamily,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCardWithBorder(String title, String value) {
+    return Container(
+      height: 85,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Appcolor.borderGrey,
+          width: 1.0,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                title == "Vehicle Name"
+                    ? Icons.directions_car
+                    : title == "Registration Number"
+                    ? Icons.confirmation_number
+                    : Icons.flash_on,
+                size: 14,
+                color: Appcolor.green.withOpacity(0.7),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: TextStyle(
+                  color: Colors.grey.shade500,
+                  fontSize: 11,
+                  fontFamily: Appcolor.fontFamily,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.3,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              color: Appcolor.black,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              fontFamily: Appcolor.fontFamily,
+              letterSpacing: 0.2,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: Appcolor.green.withOpacity(0.7),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.grey.shade500,
+                  fontSize: 12,
+                  fontFamily: Appcolor.fontFamily,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  color: Appcolor.black,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: Appcolor.fontFamily,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -776,7 +1675,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Appcolor.green,
+                  ),
                 ),
                 SizedBox(height: 16),
                 Text("Recovering charging session..."),
@@ -785,14 +1686,15 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
           )
               : Consumer<LiveChargingController>(
             builder: (context, controller, child) {
-              // Check for no active session - show loading state while we prepare to navigate back
               if (controller.isNoActiveSession) {
                 return const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Appcolor.green,
+                        ),
                       ),
                       SizedBox(height: 16),
                       Text("Session completed..."),
@@ -807,7 +1709,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Appcolor.green,
+                        ),
                       ),
                       SizedBox(height: 16),
                       Text("Loading charging data..."),
@@ -816,7 +1720,6 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
                 );
               }
 
-              // If we have no data after loading, show a message
               if (!controller.isLoading && controller.currentLiveData == null) {
                 return Center(
                   child: Column(
@@ -859,11 +1762,13 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
                 );
               }
 
-              // Main charging progress UI
               return Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -883,46 +1788,19 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
                       ],
                     ),
                   ),
-                  const Divider(color: Appcolor.borderGrey, thickness: 0.5),
+                  const Divider(
+                    color: Appcolor.borderGrey,
+                    thickness: 0.5,
+                  ),
                   Expanded(
                     child: SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         children: [
-                          // Vehicle Info Row - Using stored values from chargingDetails
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                flex: 2,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _vehicleName.isNotEmpty ? _vehicleName : "Unknown Vehicle",
-                                      style: TextStyle(
-                                        color: Appcolor.black,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        fontFamily: Appcolor.fontFamily,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _registrationNumber,
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                        fontSize: 13,
-                                        fontFamily: Appcolor.fontFamily,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
                               Expanded(
                                 flex: 1,
                                 child: Column(
@@ -931,7 +1809,11 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
-                                        Icon(Icons.access_time, color: Colors.grey.shade600, size: 14),
+                                        Icon(
+                                          Icons.access_time,
+                                          color: Colors.grey.shade600,
+                                          size: 14,
+                                        ),
                                         const SizedBox(width: 4),
                                         Expanded(
                                           child: Text(
@@ -955,7 +1837,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
                                           height: 8,
                                           decoration: BoxDecoration(
                                             shape: BoxShape.circle,
-                                            color: controller.chargingStatus == "Charging" ? Appcolor.green : Colors.red,
+                                            color: controller.chargingStatus == "Charging"
+                                                ? Appcolor.green
+                                                : Colors.red,
                                           ),
                                         ),
                                         const SizedBox(width: 4),
@@ -978,8 +1862,6 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
                             ],
                           ),
                           const SizedBox(height: 20),
-
-                          // Car Image
                           Container(
                             height: 160,
                             width: double.infinity,
@@ -993,258 +1875,309 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
                             ),
                           ),
                           const SizedBox(height: 20),
-
-                          // Battery Status
                           Column(
                             children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.flash_on, color: Appcolor.green, size: 20),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          "${controller.batteryPercentage.toStringAsFixed(0)}%",
-                                          style: TextStyle(
+                              if (shouldShowBatteryProgressSection(controller.chargerType))
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.flash_on,
+                                            color: Appcolor.green,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            "${controller.batteryPercentage.toStringAsFixed(0)}%",
+                                            style: TextStyle(
                                               color: Appcolor.black,
                                               fontSize: 20,
                                               fontWeight: FontWeight.bold,
-                                              fontFamily: Appcolor.fontFamily),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: controller.chargingStatus == "Charging"
-                                                ? Appcolor.green.withOpacity(0.1)
-                                                : Colors.red.withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            controller.chargingStatus,
-                                            style: TextStyle(
-                                              color: controller.chargingStatus == "Charging" ? Appcolor.green : Colors.red,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
                                               fontFamily: Appcolor.fontFamily,
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: controller.chargingStatus == "Charging"
+                                                  ? Appcolor.green.withOpacity(0.1)
+                                                  : Colors.red.withOpacity(0.1),
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              controller.chargingStatus,
+                                              style: TextStyle(
+                                                color: controller.chargingStatus == "Charging"
+                                                    ? Appcolor.green
+                                                    : Colors.red,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                                fontFamily: Appcolor.fontFamily,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          _formattedRunningDuration,
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            fontFamily: Appcolor.fontFamily,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        Text(
+                                          "Elapsed Time",
+                                          style: TextStyle(
+                                            color: Colors.grey.shade500,
+                                            fontSize: 10,
+                                            fontFamily: Appcolor.fontFamily,
+                                          ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        _formattedRunningDuration,
-                                        style: TextStyle(
-                                          color: Colors.grey.shade600,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          fontFamily: Appcolor.fontFamily,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        "Elapsed Time",
-                                        style: TextStyle(
-                                          color: Colors.grey.shade500,
-                                          fontSize: 10,
-                                          fontFamily: Appcolor.fontFamily,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: LinearProgressIndicator(
-                                  value: controller.batteryPercentage / 100,
-                                  minHeight: 8,
-                                  backgroundColor: Appcolor.borderGrey,
-                                  color: Appcolor.green,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Info Cards Row 1
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: _infoCard("Duration", _formattedRunningDuration),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _infoCard("Amount Used", controller.totalCost),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _infoCard("Current Speed", controller.currentPower),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Info Cards Row 2
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: _infoCard("Wallet Balance", controller.walletBalance),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _infoCard("Station", controller.stationCity),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _infoCard("Charger Type", controller.chargerType),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Bottom Cards
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: _bigCard("Expected Completion", controller.getEstimatedTimeToFull()),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _bigCard("Charger Capacity", controller.chargerPowerCapacity),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Technical Details - Complete API Response
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Appcolor.lightGrey,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Column(
-                              children: [
-                                const Row(
+                                  ],
+                                )
+                              else
+                                Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text("Session Details",
-                                      style: TextStyle(
-                                        color: Appcolor.black,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            "Charging Session",
+                                            style: TextStyle(
+                                              color: Appcolor.black,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w700,
+                                              fontFamily: Appcolor.fontFamily,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          // Text(
+                                          //   "Waiting for DC charging metrics",
+                                          //   style: TextStyle(
+                                          //     color: Colors.grey.shade600,
+                                          //     fontSize: 12,
+                                          //     fontFamily: Appcolor.fontFamily,
+                                          //   ),
+                                          // ),
+                                        ],
                                       ),
                                     ),
-                                    Icon(Icons.ev_station,
-                                        color: Appcolor.green, size: 20),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          _formattedRunningDuration,
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            fontFamily: Appcolor.fontFamily,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        Text(
+                                          "Elapsed Time",
+                                          style: TextStyle(
+                                            color: Colors.grey.shade500,
+                                            fontSize: 10,
+                                            fontFamily: Appcolor.fontFamily,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ],
                                 ),
+                              if (shouldShowBatteryProgressSection(controller.chargerType))
+                                const SizedBox(height: 10),
+                              if (shouldShowBatteryProgressSection(controller.chargerType))
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: LinearProgressIndicator(
+                                    value: controller.batteryPercentage / 100,
+                                    minHeight: 8,
+                                    backgroundColor: Appcolor.borderGrey,
+                                    color: Appcolor.green,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _infoCard(
+                                  "Amount Used",
+                                  controller.totalCost,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _infoCard(
+                                  "Current Speed",
+                                  controller.currentPower,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                                 const SizedBox(height: 12),
-                                const Divider(color: Appcolor.borderGrey, thickness: 1),
-
-                                // Session Information
-                                _sectionHeader("📋 Session Information"),
-                                _techRow("Session ID", controller.currentLiveData?.sessionId.toString() ?? 'N/A'),
-                                _techRow("Transaction ID", controller.currentLiveData?.transactionId ?? 'N/A'),
-                                _techRow("Started At", controller.formattedStartedAt),
-                                _techRow("Status", controller.chargingStatus),
-
-                                // Time Information
-                                _sectionHeader("⏱️ Time Information"),
-                                _techRow("Elapsed Seconds", "${_parseDuration(controller.currentLiveData?.elapsedTime).inSeconds} sec"),
-                                _techRow("Elapsed Minutes", "${_parseDuration(controller.currentLiveData?.elapsedTime).inMinutes} min"),
-                                _techRow("Formatted Time", _formattedRunningDuration),
-
-                                // Energy Information
-                                _sectionHeader("⚡ Energy Information"),
-                                _techRow("Consumed Energy", controller.energyConsumed),
-                                _techRow("Current Power", controller.currentPower),
-                                _techRow("SOC Percentage", controller.currentLiveData?.energy.socPercent != null
-                                    ? "${controller.currentLiveData!.energy.socPercent!.toStringAsFixed(1)}%"
-                                    : "N/A"),
-                                _techRow("Meter Readings", controller.totalMeterReadings.toString()),
-
-                                // Billing Information
-                                _sectionHeader("💰 Billing Information"),
-                                _techRow("Current Cost", controller.totalCost),
-                                _techRow("Currency", controller.currentLiveData?.billing.currency ?? 'INR'),
-                                _techRow("Wallet Balance", controller.walletBalance),
-
-                                // Vehicle Information - Using stored values
-                                _sectionHeader("🚗 Vehicle Information"),
-                                _techRow("Vehicle Name", _vehicleName),
-                                _techRow("Registration Number", _registrationNumber),
-
-                                // Charger Information
-                                _sectionHeader("🔌 Charger Information"),
-                                _techRow("Charger ID", controller.chargerId),
-                                _techRow("Charger Name", controller.chargerName),
-                                _techRow("Charger Type", controller.chargerType),
-                                _techRow("Power Capacity", controller.chargerPowerCapacity),
-                                _techRow("Charger Status", controller.chargerStatus),
-
-                                // Connector Information
-                                _sectionHeader("⚡ Connector Information"),
-                                _techRow("Connector ID", "${controller.currentLiveData?.connector.id ?? 'N/A'}"),
-                                _techRow("Connector UID", controller.currentLiveData?.connector.uid ?? 'N/A'),
-                                _techRow("Connector Name", controller.connectorName),
-                                _techRow("Connector Type", controller.connectorType),
-                                _techRow("Connector Status", controller.connectorStatus),
-
-                                // Station Information
-                                _sectionHeader("📍 Station Information"),
-                                _techRow("Station ID", "${controller.stationId}"),
-                                _techRow("Station Name", controller.stationName),
-                                _techRow("City", controller.stationCity),
-
-                                // OCPP Information
-                                _sectionHeader("🔄 OCPP Information"),
-                                _techRow("OCPP Connected", controller.ocppConnected ? "Yes" : "No"),
-                                _techRow("OCPP Transaction ID", controller.ocppTransactionId.toString()),
-                                _techRow("Meter Readings", controller.totalMeterReadings.toString()),
+                                _infoCardWithBorder(
+                                  "Energy Consumed",
+                                  controller.energyConsumed,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Appcolor.borderGrey,
+                                width: 1.0,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildDetailRow(
+                                  icon: Icons.ev_station,
+                                  label: 'Charger',
+                                  value: formatDisplayValue(controller.chargerName),
+                                ),
+                                const Divider(
+                                  color: Appcolor.borderGrey,
+                                  thickness: 0.5,
+                                  height: 16,
+                                ),
+                                _buildDetailRow(
+                                  icon: Icons.confirmation_number,
+                                  label: 'Charger ID',
+                                  value: formatDisplayValue(controller.chargerId),
+                                ),
+                                const Divider(
+                                  color: Appcolor.borderGrey,
+                                  thickness: 0.5,
+                                  height: 16,
+                                ),
+                                _buildDetailRow(
+                                  icon: Icons.power,
+                                  label: 'Connector',
+                                  value: formatDisplayValue(controller.connectorName),
+                                ),
+                                const Divider(
+                                  color: Appcolor.borderGrey,
+                                  thickness: 0.5,
+                                  height: 16,
+                                ),
+                                _buildDetailRow(
+                                  icon: Icons.fiber_pin,
+                                  label: 'Connector UID',
+                                  value: formatDisplayValue(controller.currentLiveData?.connector.uid),
+                                ),
+                                const Divider(
+                                  color: Appcolor.borderGrey,
+                                  thickness: 0.5,
+                                  height: 16,
+                                ),
+                                _buildDetailRow(
+                                  icon: Icons.directions_car,
+                                  label: 'Vehicle Name',
+                                  value: _vehicleName.isNotEmpty ? _vehicleName : 'Unknown Vehicle',
+                                ),
+                                const Divider(
+                                  color: Appcolor.borderGrey,
+                                  thickness: 0.5,
+                                  height: 16,
+                                ),
+                                _buildDetailRow(
+                                  icon: Icons.confirmation_number,
+                                  label: 'Registration Number',
+                                  value: _registrationNumber.isNotEmpty ? _registrationNumber : 'N/A',
+                                ),
                               ],
                             ),
                           ),
                           const SizedBox(height: 20),
-
-                          // End Session Button
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: SizedBox(
+                              width: double.infinity,
+                              height: 56,
+                              child: ElevatedButton(
+                                onPressed: _stopChargingController.isLoading
+                                    ? null
+                                    : _stopCharging,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  elevation: 2,
                                 ),
-                                elevation: 2,
-                              ),
-                              onPressed: _stopCharging,
-                              child: Text(
-                                "Stop Charging",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: Appcolor.fontFamily,
+                                child: _stopChargingController.isLoading
+                                    ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                    : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: const [
+                                    Icon(
+                                      Icons.stop_circle,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                    SizedBox(width: 12),
+                                    Text(
+                                      "Stop Charging",
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ),
+                          const SizedBox(height: 10),
                         ],
                       ),
                     ),
@@ -1256,277 +2189,5 @@ class _ChargingProgressPageState extends State<ChargingProgressPage> {
         ),
       ),
     );
-  }
-
-  Widget _sectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          title,
-          style: TextStyle(
-            color: Appcolor.green,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            fontFamily: Appcolor.fontFamily,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _infoCard(String title, String value) {
-    return Container(
-      height: 100,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Appcolor.lightGrey,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 12,
-              fontFamily: Appcolor.fontFamily,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              color: Appcolor.black,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              fontFamily: Appcolor.fontFamily,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _bigCard(String title, String value) {
-    return Container(
-      height: 105,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Appcolor.lightGrey,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 12,
-              fontFamily: Appcolor.fontFamily,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              color: Appcolor.black,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              fontFamily: Appcolor.fontFamily,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _techRow(String title, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              title,
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontSize: 12,
-                fontFamily: Appcolor.fontFamily,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: Text(
-              value,
-              style: TextStyle(
-                color: Appcolor.black,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                fontFamily: Appcolor.fontFamily,
-              ),
-              textAlign: TextAlign.end,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _stopCharging() async {
-    int? sessionId = widget.chargingDetails?['sessionId'] ?? _liveChargingController.currentSessionId;
-
-    print('🔍 Stop Charging - Session ID: $sessionId');
-
-    if (sessionId == null) {
-      print('❌ Session ID is null');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Session ID not found"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-
-    final shouldStop = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("Stop Charging"),
-          content: const Text("Are you sure you want to stop charging?"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              child: const Text("Stop"),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (shouldStop != true) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  "Stopping Charging Session...",
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  "Please wait",
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    try {
-      final success = await _stopChargingController.stopChargingSession(
-        sessionId: sessionId,
-      );
-
-      if (mounted) {
-        Navigator.pop(context);
-      }
-
-      if (success && mounted) {
-        _liveChargingController.stopPolling();
-        _durationTimer?.cancel();
-
-        // Get the stop response data
-        final stopData = _stopChargingController.stopResponse?.data;
-
-        // If we have stop data, use it, otherwise use live data
-        if (stopData != null) {
-          // Create a Map from StopChargingData
-          final sessionData = {
-            'formattedDuration': stopData.formattedDuration,
-            'formattedEnergy': stopData.formattedEnergy,
-            'formattedCost': stopData.formattedCost,
-            'status': stopData.status.toUpperCase(),
-            'walletBalanceAfter': double.tryParse(stopData.walletBalanceAfter) ?? 0.0,
-          };
-          _showCompletionBottomSheet(sessionData);
-        } else {
-          // Fallback to live data
-          _showCompletionBottomSheetForCompletedSession();
-        }
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_stopChargingController.errorMessage ?? "Failed to stop charging"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      print('❌ Error in _stopCharging: $e');
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Error: ${e.toString()}"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 }

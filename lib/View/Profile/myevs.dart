@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../Controller/manufacturer_controller.dart';
+import '../../Model/manufacturer_model.dart';
 import '../../Theme/colors.dart';
 import '../../Controller/vehicle_controller.dart';
 import '../../Model/vehicle_model.dart';
@@ -15,51 +17,31 @@ class MyVehiclesPage extends StatefulWidget {
 class _MyVehiclesPageState extends State<MyVehiclesPage> {
   final VehicleController _vehicleController = VehicleController();
   final TextEditingController _registrationController = TextEditingController();
+  final SettingsController _settingsController = SettingsController();
 
   List<Vehicle> vehicles = [];
-  String? _selectedManufacturer;
-  String? _selectedModel;
+  List<Manufacturer> manufacturers = [];  // Changed from List<String>
+  List<VehicleModel> models = [];  // Changed from List<String>
+
+  Manufacturer? _selectedManufacturer;  // Changed from String?
+  VehicleModel? _selectedModel;
 
   bool _isAddingVehicle = false;
   bool _isLoadingVehicles = true;
+  bool _isLoadingManufacturers = false;  // Add this
+  bool _isLoadingModels = false;  // Add this
   bool _isDeleting = false;
   bool _isUpdating = false;
 
   int _currentIndex = 1;
 
-  final List<String> _manufacturers = [
-    'Tesla', 'MG', 'Hyundai', 'Nissan', 'BMW', 'Audi', 'Mercedes-Benz',
-    'Kia', 'Ford', 'Volkswagen', 'Renault', 'Jaguar', 'Porsche', 'Volvo',
-  ];
-
-  final Map<String, List<String>> _modelsByManufacturer = {
-    'Tesla': ['Model 3', 'Model S', 'Model X', 'Model Y', 'Cybertruck'],
-    'MG': ['ZS EV', 'MG4 Electric', 'MG5 EV', 'Comet EV'],
-    'Hyundai': ['Kona Electric', 'Ioniq 5', 'Ioniq 6', 'Kona EV'],
-    'Nissan': ['Leaf', 'Ariya', 'LEAF e+'],
-    'BMW': ['i3', 'i4', 'iX', 'iX3', 'i7'],
-    'Audi': ['e-tron', 'Q4 e-tron', 'Q8 e-tron', 'e-tron GT'],
-    'Mercedes-Benz': ['EQA', 'EQB', 'EQC', 'EQE', 'EQS', 'EQV'],
-    'Kia': ['EV6', 'Niro EV', 'Soul EV', 'EV9'],
-    'Ford': ['Mustang Mach-E', 'F-150 Lightning', 'E-Transit'],
-    'Volkswagen': ['ID.3', 'ID.4', 'ID.5', 'ID. Buzz', 'e-Golf'],
-    'Renault': ['Zoe', 'Megane E-Tech', 'Twizy', 'Kangoo'],
-    'Jaguar': ['I-PACE'],
-    'Porsche': ['Taycan', 'Macan Electric'],
-    'Volvo': ['XC40 Recharge', 'C40 Recharge', 'EX90'],
-  };
-
-  List<String> get _availableModels {
-    if (_selectedManufacturer != null && _modelsByManufacturer.containsKey(_selectedManufacturer)) {
-      return _modelsByManufacturer[_selectedManufacturer]!;
-    }
-    return [];
-  }
+  // Remove the static lists since we're using API data now
 
   @override
   void initState() {
     super.initState();
     _loadVehicles();
+    _loadManufacturers();
   }
 
   @override
@@ -420,7 +402,49 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
     );
   }
 
-  // ---------- Vehicle CRUD ----------
+
+  Future<void> _loadManufacturers() async {
+    setState(() {
+      _isLoadingManufacturers = true;
+    });
+
+    final response = await _settingsController.fetchManufacturers();
+
+    if (mounted) {
+      setState(() {
+        _isLoadingManufacturers = false;
+        if (response.success) {
+          manufacturers = response.data;
+        } else {
+          manufacturers = [];
+          _showMessage('Failed to load manufacturers', Colors.red);
+        }
+      });
+    }
+  }
+
+  Future<void> _loadModels(int manufacturerId) async {
+    setState(() {
+      _isLoadingModels = true;
+      _selectedModel = null;
+      models = [];
+    });
+
+    final response = await _settingsController.fetchModels(manufacturerId); // Use SettingsController
+
+    if (mounted) {
+      setState(() {
+        _isLoadingModels = false;
+        if (response.success) {
+          models = response.data;
+        } else {
+          models = [];
+          _showMessage('Failed to load models', Colors.red);
+        }
+      });
+    }
+  }
+
   Future<void> _loadVehicles() async {
     setState(() {
       _isLoadingVehicles = true;
@@ -456,8 +480,8 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
     });
 
     final model = AddVehicleModel(
-      manufacturer: _selectedManufacturer!,
-      model: _selectedModel!,
+      manufacturer: _selectedManufacturer!.name,  // Use manufacturer name
+      model: _selectedModel!.name,  // Use model name
       registrationNumber: _registrationController.text.trim(),
     );
 
@@ -494,12 +518,11 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
     });
 
     final model = UpdateVehicleModel(
-      manufacturer: _selectedManufacturer!,
-      model: _selectedModel!,
+      manufacturer: _selectedManufacturer!.name,
+      model: _selectedModel!.name,
       registrationNumber: _registrationController.text.trim(),
     );
 
-    // Convert vehicleId to int if needed, or keep as String based on your API
     final response = await _vehicleController.updateVehicle(vehicleId, model);
 
     if (mounted) {
@@ -544,6 +567,7 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
     _selectedManufacturer = null;
     _selectedModel = null;
     _registrationController.clear();
+    models = [];  // Clear models when resetting
   }
 
   void _showMessage(String message, Color color) {
@@ -605,9 +629,42 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
   }
 
   void _showEditVehicleBottomSheet(Vehicle vehicle) {
-    _selectedManufacturer = vehicle.manufacturer;
-    _selectedModel = vehicle.model;
+    // Reset values
+    _selectedManufacturer = null;
+    _selectedModel = null;
+
+    // Set registration number
     _registrationController.text = vehicle.registrationNumber;
+
+    // Find manufacturer if available
+    if (manufacturers.isNotEmpty) {
+      try {
+        _selectedManufacturer = manufacturers.firstWhere(
+              (m) =>
+          m.name.toLowerCase().trim() ==
+              vehicle.manufacturer.toLowerCase().trim(),
+        );
+
+        // Load models for the selected manufacturer
+        _loadModels(_selectedManufacturer!.id).then((_) {
+          if (mounted && models.isNotEmpty) {
+            try {
+              setState(() {
+                _selectedModel = models.firstWhere(
+                      (m) =>
+                  m.name.toLowerCase().trim() ==
+                      vehicle.model.toLowerCase().trim(),
+                );
+              });
+            } catch (e) {
+              print('Model not found: $e');
+            }
+          }
+        });
+      } catch (e) {
+        print('Manufacturer not found: $e');
+      }
+    }
 
     showModalBottomSheet(
       context: context,
@@ -623,17 +680,24 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                borderRadius:
+                BorderRadius.vertical(top: Radius.circular(28)),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const SizedBox(height: 20),
+
                   Text(
                     "Edit Vehicle",
-                    style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+
                   const SizedBox(height: 20),
+
                   Flexible(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -643,68 +707,161 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
                           _buildModernDropdownField(
                             label: "Manufacturer",
                             icon: Icons.business_outlined,
-                            value: _selectedManufacturer,
-                            items: _manufacturers,
+                            value:
+                            _selectedManufacturer?.id.toString(),
+                            items:
+                            manufacturers.map((m) => m.name).toList(),
+                            itemValues: manufacturers
+                                .map((m) => m.id.toString())
+                                .toList(),
                             hint: "Select manufacturer",
-                            onChanged: (value) {
-                              setStateBottomSheet(() {
-                                _selectedManufacturer = value;
-                                _selectedModel = null;
-                              });
+                            isLoading: _isLoadingManufacturers,
+                            onChanged: (value) async {
+                              if (value != null) {
+                                final manufacturer =
+                                manufacturers.firstWhere(
+                                      (m) =>
+                                  m.id.toString() == value,
+                                );
+
+                                setStateBottomSheet(() {
+                                  _selectedManufacturer =
+                                      manufacturer;
+                                  _selectedModel = null;
+                                  models.clear();
+                                });
+
+                                await _loadModels(manufacturer.id);
+
+                                if (mounted) {
+                                  setStateBottomSheet(() {});
+                                }
+                              }
                             },
                           ),
+
                           const SizedBox(height: 16),
+
                           _buildModernDropdownField(
                             label: "Model",
-                            icon: Icons.directions_car_outlined,
-                            value: _selectedModel,
-                            items: _availableModels,
+                            icon:
+                            Icons.directions_car_outlined,
+                            value:
+                            _selectedModel?.id.toString(),
+                            items:
+                            models.map((m) => m.name).toList(),
+                            itemValues: models
+                                .map((m) => m.id.toString())
+                                .toList(),
                             hint: "Select model",
-                            enabled: _selectedManufacturer != null,
+                            enabled: _selectedManufacturer != null &&
+                                !_isLoadingModels,
+                            isLoading: _isLoadingModels,
                             onChanged: (value) {
-                              setStateBottomSheet(() {
-                                _selectedModel = value;
-                              });
+                              if (value != null) {
+                                final model =
+                                models.firstWhere(
+                                      (m) =>
+                                  m.id.toString() == value,
+                                );
+
+                                setStateBottomSheet(() {
+                                  _selectedModel = model;
+                                });
+                              }
                             },
                           ),
+
                           const SizedBox(height: 16),
+
                           _buildModernTextField(
-                            controller: _registrationController,
+                            controller:
+                            _registrationController,
                             label: "Registration Number",
-                            icon: Icons.confirmation_number_outlined,
+                            icon: Icons
+                                .confirmation_number_outlined,
                             hint: "Enter number",
                           ),
+
                           const SizedBox(height: 20),
                         ],
                       ),
                     ),
                   ),
+
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                    padding:
+                    const EdgeInsets.fromLTRB(
+                        24, 8, 24, 24),
                     child: Row(
                       children: [
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: _isUpdating ? null : () => Navigator.pop(context),
+                            onPressed: _isUpdating
+                                ? null
+                                : () => Navigator.pop(context),
                             style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              padding:
+                              const EdgeInsets.symmetric(
+                                  vertical: 14),
+                              shape:
+                              RoundedRectangleBorder(
+                                borderRadius:
+                                BorderRadius.circular(
+                                    16),
+                              ),
                             ),
-                            child: Text("Cancel", style: GoogleFonts.poppins(fontSize: 13)),
+                            child: Text(
+                              "Cancel",
+                              style: GoogleFonts.poppins(
+                                  fontSize: 13),
+                            ),
                           ),
                         ),
+
                         const SizedBox(width: 16),
+
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: _isUpdating ? null : () => _updateVehicle(vehicle.id.toString()),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Appcolor.green,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            onPressed: _isUpdating
+                                ? null
+                                : () => _updateVehicle(
+                                vehicle.id.toString()),
+                            style:
+                            ElevatedButton.styleFrom(
+                              backgroundColor:
+                              Appcolor.green,
+                              padding:
+                              const EdgeInsets.symmetric(
+                                  vertical: 14),
+                              shape:
+                              RoundedRectangleBorder(
+                                borderRadius:
+                                BorderRadius.circular(
+                                    16),
+                              ),
                             ),
                             child: _isUpdating
-                                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
-                                : Text("Update Vehicle", style: GoogleFonts.poppins(fontSize: 13)),
+                                ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child:
+                              CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                AlwaysStoppedAnimation<
+                                    Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                                : Text(
+                              "Update Vehicle",
+                              style:
+                              GoogleFonts.poppins(
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -786,30 +943,53 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
                           _buildModernDropdownField(
                             label: "Manufacturer",
                             icon: Icons.business_outlined,
-                            value: _selectedManufacturer,
-                            items: _manufacturers,
+                            value: _selectedManufacturer?.id.toString(),
+                            items: manufacturers.map((m) => m.name).toList(),
+                            itemValues: manufacturers.map((m) => m.id.toString()).toList(),
                             hint: "Select manufacturer",
+                            isLoading: _isLoadingManufacturers,
                             onChanged: (value) {
-                              setStateBottomSheet(() {
-                                _selectedManufacturer = value;
-                                _selectedModel = null;
-                                errorMessage = null;
-                              });
+                              if (value != null) {
+                                final manufacturer = manufacturers.firstWhere(
+                                      (m) => m.id.toString() == value,
+                                  orElse: () => manufacturers.first,
+                                );
+                                setStateBottomSheet(() {
+                                  _selectedManufacturer = manufacturer;
+                                  _selectedModel = null;
+                                  models = [];
+                                  errorMessage = null;
+                                });
+                                // Load models after setting state
+                                _loadModels(manufacturer.id).then((_) {
+                                  if (mounted) {
+                                    setStateBottomSheet(() {}); // Refresh UI after models loaded
+                                  }
+                                });
+                              }
                             },
                           ),
                           const SizedBox(height: 18),
                           _buildModernDropdownField(
                             label: "Model",
                             icon: Icons.directions_car_outlined,
-                            value: _selectedModel,
-                            items: _availableModels,
-                            hint: _selectedManufacturer == null ? "Select model" : "Select model",
-                            enabled: _selectedManufacturer != null,
+                            value: _selectedModel?.id.toString(),
+                            items: models.map((m) => m.name).toList(),
+                            itemValues: models.map((m) => m.id.toString()).toList(),
+                            hint: _selectedManufacturer == null ? "Select manufacturer first" : "Select model",
+                            enabled: _selectedManufacturer != null && !_isLoadingModels,
+                            isLoading: _isLoadingModels,
                             onChanged: (value) {
-                              setStateBottomSheet(() {
-                                _selectedModel = value;
-                                errorMessage = null;
-                              });
+                              if (value != null) {
+                                final model = models.firstWhere(
+                                      (m) => m.id.toString() == value,
+                                  orElse: () => models.first,
+                                );
+                                setStateBottomSheet(() {
+                                  _selectedModel = model;
+                                  errorMessage = null;
+                                });
+                              }
                             },
                           ),
                           const SizedBox(height: 18),
@@ -906,7 +1086,6 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
       ),
     );
   }
-
   // ---------- UI Helpers ----------
   Widget _buildModernTextField({
     required TextEditingController controller,
@@ -951,8 +1130,10 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
     required IconData icon,
     required String? value,
     required List<String> items,
+    required List<String> itemValues,
     required String hint,
     bool enabled = true,
+    bool isLoading = false,
     required Function(String?) onChanged,
   }) {
     return Column(
@@ -985,10 +1166,10 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
               child: DropdownButton<String>(
                 value: value,
                 hint: Text(
-                  hint,
+                  isLoading ? "Loading..." : hint,
                   style: GoogleFonts.poppins(
                     fontSize: 12,
-                    color: Colors.black54,
+                    color: isLoading ? Colors.grey.shade400 : Colors.black54,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1002,10 +1183,15 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
                   fontSize: 13,
                   color: Colors.black,
                 ),
-                onChanged: enabled ? onChanged : null,
-                items: items.map((item) {
+                onChanged: (enabled && !isLoading) ? onChanged : null,
+                items: isLoading
+                    ? [] // Return empty list when loading
+                    : items.asMap().entries.map((entry) {
+                  int index = entry.key;
+                  String item = entry.value;
+                  String itemValue = itemValues[index];
                   return DropdownMenuItem<String>(
-                    value: item,
+                    value: itemValue,
                     child: Text(
                       item,
                       style: GoogleFonts.poppins(
@@ -1181,7 +1367,10 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
               ),
             ),
             GestureDetector(
-              onTap: () => _showEditVehicleBottomSheet(vehicle),
+              onTap: () {
+                print('Edit icon clicked');
+                _showEditVehicleBottomSheet(vehicle);
+              },
               child: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(color: Appcolor.green.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
@@ -1203,3 +1392,4 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
     );
   }
 }
+

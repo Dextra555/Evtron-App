@@ -1,73 +1,71 @@
 import 'dart:convert';
-
 import 'package:http/http.dart' as http;
-import '../Model/charging_history_model.dart';
+import '../model/charging_history_model.dart';
 import 'api_endpoints.dart';
 
 class ChargingHistoryService {
 
-  Future<List<ChargingHistoryModel>>
-  getChargingHistory() async {
-
+  Future<List<ChargingHistoryModel>> getChargingHistory(String token) async {
     try {
-
-      print(
-        "API URL : ${ApiEndpoints.chargingHistory}",
-      );
+      print('========== CHARGING HISTORY API DEBUG ==========');
+      print('Token length: ${token.length}');
+      print('Token preview: ${token.substring(0, token.length > 30 ? 30 : token.length)}...');
+      print('API URL: ${ApiEndpoints.chargingHistory}');
+      print('================================================');
 
       final response = await http.get(
         Uri.parse(ApiEndpoints.chargingHistory),
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $token",
+        },
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Connection timeout. Please check your internet connection.');
+        },
       );
 
-      /// STATUS CODE
-      print(
-        "STATUS CODE : ${response.statusCode}",
-      );
-
-      /// FULL RESPONSE
-      print(
-        "RESPONSE BODY : ${response.body}",
-      );
+      print('Response Status Code: ${response.statusCode}');
+      print('Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
+        final jsonData = jsonDecode(response.body);
 
-        final jsonData =
-        jsonDecode(response.body);
-
-        print(
-          "JSON RESPONSE : $jsonData",
-        );
-
-        if (jsonData['success'] == true) {
-
-          List data = jsonData['data'];
-
-          print(
-            "TOTAL RECORDS : ${data.length}",
-          );
-
-          return data.map((e) {
-
-            print(
-              "ITEM : $e",
-            );
-
-            return ChargingHistoryModel
-                .fromJson(e);
-
-          }).toList();
+        List data;
+        if (jsonData['data'] != null) {
+          data = jsonData['data'];
+          print('📊 Found ${data.length} records in jsonData["data"]');
+        } else if (jsonData is List) {
+          data = jsonData;
+          print('📊 Found ${data.length} records in jsonData list');
+        } else {
+          data = [];
+          print('⚠️ No data field found and response is not a list');
         }
+
+        if (data.isEmpty) {
+          print('ℹ️ No charging history records found');
+          return [];
+        }
+
+        final historyList = data.map((e) => ChargingHistoryModel.fromJson(e)).toList();
+        print('✅ Successfully parsed ${historyList.length} charging history records');
+        return historyList;
+
+      } else if (response.statusCode == 401) {
+        print('❌ Unauthorized! Token may be invalid or expired');
+        throw Exception('Session expired. Please login again.');
+      } else {
+        print('❌ Failed with status code: ${response.statusCode}');
+        throw Exception('Failed to load charging history. Status: ${response.statusCode}');
       }
 
-      return [];
-
     } catch (e) {
-
-      print(
-        "CHARGING HISTORY ERROR : $e",
-      );
-
-      return [];
+      print('❌ Exception in getChargingHistory: $e');
+      throw Exception(e.toString());
     }
   }
 }
+

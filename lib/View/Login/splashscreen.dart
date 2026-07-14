@@ -367,6 +367,22 @@ class _SplashScreenState extends State<SplashScreen>
                         );
                       },
                     ),
+
+                    const Spacer(),
+
+                    // Version text at bottom
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: Text(
+                        'Evtron v1.5',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF95A5A6),
+                          letterSpacing: 1,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),

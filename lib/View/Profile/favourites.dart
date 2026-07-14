@@ -5,6 +5,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../Controller/wishlist_controller.dart';
 import '../../Model/wishlist.dart';
 import '../../Theme/colors.dart';
+import '../Login/Bottom.dart';
+import '../Scanner/scanner.dart';
+import '../Payment/paymentpage.dart';
+import '../Profile/profile.dart';
+import '../Home/mapui.dart';
 
 class FavoriteStationsScreen extends StatefulWidget {
   const FavoriteStationsScreen({super.key});
@@ -15,6 +20,7 @@ class FavoriteStationsScreen extends StatefulWidget {
 
 class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
   bool _isRemoving = false;
+  int _currentIndex = 1;
 
   @override
   void initState() {
@@ -31,12 +37,9 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
     });
   }
 
-  // Method to open location in Google Maps
   Future<void> _openInMaps(double latitude, double longitude, String stationName, String fullAddress) async {
     try {
-      // Validate coordinates
       if (latitude == 0.0 && longitude == 0.0) {
-        // If coordinates are 0, try to search by address
         final encodedAddress = Uri.encodeComponent(fullAddress);
         final searchUrl = Uri.parse(
             "https://www.google.com/maps/search/?api=1&query=$encodedAddress"
@@ -103,9 +106,44 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
     }
   }
 
+  // Navigation handler for bottom nav
+  void _onTabTapped(int index) async {
+    if (index == _currentIndex) return;
+
+    Widget page;
+    switch (index) {
+      case 0:
+        page = const MapScreen();
+        break;
+      case 1:
+        page = const ScannerPage();
+        break;
+      case 2:
+        page = const PaymentScreen();
+        break;
+      case 3:
+        page = ProfileScreen(isDarkMode: false, onToggle: () {});
+        break;
+      default:
+        page = const MapScreen();
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => page),
+    );
+  }
+
+  void _onScanTap() {
+    // Navigate to scanner page
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const ScannerPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Get screen width using MediaQuery
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360;
     final isMediumScreen = screenWidth >= 360 && screenWidth < 600;
@@ -115,11 +153,12 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
+        automaticallyImplyLeading: false,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87, size: 18),
-          onPressed: () => Navigator.pop(context),
-        ),
+        // leading: IconButton(
+        //   icon: const Icon(Icons.arrow_back, color: Colors.black87, size: 18),
+        //   onPressed: () => Navigator.pop(context),
+        // ),
         title: Text(
           "Favorite Stations",
           style: GoogleFonts.poppins(
@@ -219,6 +258,12 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
           );
         },
       ),
+      // Add the bottom navigation bar
+      bottomNavigationBar: CustomBottomNavBar(
+        currentIndex: _currentIndex,
+        onTap: _onTabTapped,
+        onScanTap: _onScanTap,
+      ),
     );
   }
 
@@ -262,7 +307,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
             color: Colors.transparent,
             child: InkWell(
               onTap: () {
-                // Navigate to location on map when tapped
                 _openInMaps(latitude, longitude, station.stationName, station.fullAddress);
               },
               borderRadius: BorderRadius.circular(20),
@@ -562,4 +606,3 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
     );
   }
 }
-

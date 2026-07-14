@@ -1,17 +1,12 @@
-import 'package:evtron/View/Home/homemapcard.dart' show MapPreviewCard;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Theme/colors.dart';
-import 'card.dart';
-import 'notification.dart';
-import 'homeenergy.dart';
-import 'homeenv.dart';
+import '../Profile/notification.dart';
 import 'homenearby.dart';
-import 'homestats.dart';
 import 'mapui.dart';
-import 'scanner.dart';
+import '../Scanner/scanner.dart';
 
 class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
@@ -33,7 +28,6 @@ class _HomeContentState extends State<HomeContent> {
   String _userName = "Guest";
   bool _isLoadingUser = true;
 
-  // Sample EV stations data (you can replace with actual data from API)
   List<Map<String, dynamic>> _evStations = [];
 
   @override
@@ -53,7 +47,6 @@ class _HomeContentState extends State<HomeContent> {
       final prefs = await SharedPreferences.getInstance();
       final String? name = prefs.getString('user_name');
 
-      // Try alternative keys if 'user_name' doesn't exist
       final String? alternativeName = prefs.getString('name') ??
           prefs.getString('full_name') ??
           prefs.getString('username');
@@ -115,7 +108,6 @@ class _HomeContentState extends State<HomeContent> {
     });
 
     try {
-      // Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         setState(() {
@@ -125,7 +117,6 @@ class _HomeContentState extends State<HomeContent> {
         return;
       }
 
-      // Check for location permissions
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -564,11 +555,11 @@ class _HomeContentState extends State<HomeContent> {
                 children: [
                   const SizedBox(height: 20),
                   // MapPreviewCard with required parameters
-                  MapPreviewCard(
-                    latitude: _currentPosition?.latitude ?? 37.7749,
-                    longitude: _currentPosition?.longitude ?? -122.4194,
-                    evStations: _evStations,
-                  ),
+                  // MapPreviewCard(
+                  //   latitude: _currentPosition?.latitude ?? 37.7749,
+                  //   longitude: _currentPosition?.longitude ?? -122.4194,
+                  //   evStations: _evStations,
+                  // ),
                   const SizedBox(height: 20),
                   // const SwipeableVehicleCards(),
                   // const SizedBox(height: 20),
@@ -612,12 +603,12 @@ class _HomeContentState extends State<HomeContent> {
                   _buildNearbyStationsSection(),
 
                   const SizedBox(height: 20),
-                  const YourStatsSection(),
+                  // const YourStatsSection(),
                   const SizedBox(height: 20),
-                  const EnergyUsageTrendSection(),
+                  // const EnergyUsageTrendSection(),
                   const SizedBox(height: 20),
-                  const EnvironmentalImpactSection(),
-                  const SizedBox(height: 16),
+                  // const EnvironmentalImpactSection(),
+                  // const SizedBox(height: 16),
                 ],
               ),
             ),

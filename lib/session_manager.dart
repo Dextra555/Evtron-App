@@ -47,5 +47,8 @@ class SessionManager {
     await prefs.remove(_isLoggedInKey);
     await prefs.remove(_userPhoneKey);
     await prefs.remove(_userIdKey);
+    await prefs.remove('auth_token');
+    await prefs.remove('token');
+    await prefs.remove('access_token');
   }
 }

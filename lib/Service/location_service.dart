@@ -4,8 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 class LocationService {
 
-  // Add this stream controller at the top of your class
-  // You'll need to add: import 'dart:async';
 
   Future<LatLng?> getCurrentLocation({Function(String)? onError}) async {
     try {

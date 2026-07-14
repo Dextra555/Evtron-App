@@ -1,24 +1,38 @@
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../Controller/start_charging_controller.dart';
+import '../../Model/start_charging_model.dart';
 import '../../Model/vehicle_model.dart';
+import '../../Service/charging_session_service.dart';
+import '../../Service/start_charging_service.dart';
 import '../../Theme/colors.dart';
 import 'ChargingProgressPage.dart';
-import 'LottieCenterScreen.dart';
 
 class VehicleScreen extends StatefulWidget {
-  final String chargerId;
+  final String connectorUid;
   final List<Vehicle> vehicles;
   final String chargerModel;
   final String chargerType;
+  final ChargerInfo? chargerInfo;
+  final ConnectorInfo? connectorInfo;
+  final StationInfo? stationInfo;
+  final double? userBalance;
+  final int? connectorId;
 
   const VehicleScreen({
-    super.key,
-    required this.chargerId,
+    Key? key,
+    required this.connectorUid,
     required this.vehicles,
     required this.chargerModel,
     required this.chargerType,
-  });
+    this.chargerInfo,
+    this.connectorInfo,
+    this.stationInfo,
+    this.userBalance,
+    this.connectorId,
+  }) : super(key: key);
 
   @override
   State<VehicleScreen> createState() => _VehicleScreenState();
@@ -27,6 +41,49 @@ class VehicleScreen extends StatefulWidget {
 class _VehicleScreenState extends State<VehicleScreen> {
   Vehicle? _selectedVehicle;
   bool _isStartingCharging = false;
+  final ChargingController _chargingController = ChargingController();
+
+  // ✅ Save vehicle details to SharedPreferences
+  Future<void> _saveVehicleDetailsToStorage({
+    required int sessionId,
+    required Vehicle vehicle,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      final vehicleName = '${vehicle.manufacturer} ${vehicle.model}'.trim();
+
+      // ✅ Save generic vehicle data (fallback)
+      await prefs.setString('vehicle_name', vehicleName);
+      await prefs.setString('vehicle_manufacturer', vehicle.manufacturer);
+      await prefs.setString('vehicle_model', vehicle.model);
+      await prefs.setString('vehicle_registration', vehicle.registrationNumber);
+      await prefs.setInt('vehicle_id', vehicle.id);
+
+      // ✅ Save session-specific vehicle data (MOST IMPORTANT - tied to session)
+      if (sessionId > 0) {
+        await prefs.setString('session_${sessionId}_vehicle_name', vehicleName);
+        await prefs.setString('session_${sessionId}_vehicle_manufacturer', vehicle.manufacturer);
+        await prefs.setString('session_${sessionId}_vehicle_model', vehicle.model);
+        await prefs.setString('session_${sessionId}_vehicle_registration', vehicle.registrationNumber);
+        await prefs.setInt('session_${sessionId}_vehicle_id', vehicle.id);
+      }
+
+      print('✅ VEHICLE DATA SAVED TO STORAGE:');
+      print('   Session ID: $sessionId');
+      print('   Vehicle: $vehicleName');
+      print('   Manufacturer: ${vehicle.manufacturer}');
+      print('   Model: ${vehicle.model}');
+      print('   Registration: ${vehicle.registrationNumber}');
+      print('   Session-specific keys: session_${sessionId}_vehicle_name');
+
+    } catch (e) {
+      print('❌ Error saving vehicle details: $e');
+    }
+  }
+
+
+// In VehicleScreen (vehiclelist.dart) - Update _startCharging method
 
   Future<void> _startCharging() async {
     if (_selectedVehicle == null) return;
@@ -38,8 +95,16 @@ class _VehicleScreenState extends State<VehicleScreen> {
     print('\n╔══════════════════════════════════════════════════════════════╗');
     print('║              STARTING CHARGING WITH VEHICLE                   ║');
     print('╚══════════════════════════════════════════════════════════════╝');
-    print('\n📍 Charger ID: ${widget.chargerId}');
+    print('\n📍 Connector UID: ${widget.connectorUid}');
     print('🚗 Vehicle: ${_selectedVehicle!.manufacturer} ${_selectedVehicle!.model}');
+    print('📝 Registration: ${_selectedVehicle!.registrationNumber}');
+
+    // ✅ STEP 1: Save vehicle data IMMEDIATELY (before API call)
+    await _saveVehicleDetailsToStorage(
+      sessionId: 0, // Session ID not known yet, but we'll update later
+      vehicle: _selectedVehicle!,
+    );
+    print('✅ Vehicle data saved BEFORE starting charging');
 
     // Show loading dialog
     showDialog(
@@ -67,14 +132,6 @@ class _VehicleScreenState extends State<VehicleScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  "Charger ID: ${widget.chargerId}",
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
                   "Vehicle: ${_selectedVehicle!.manufacturer} ${_selectedVehicle!.model}",
                   style: GoogleFonts.poppins(
                     fontSize: 12,
@@ -89,65 +146,121 @@ class _VehicleScreenState extends State<VehicleScreen> {
     );
 
     try {
-      final chargingController = ChargingController();
-      final success = await chargingController.startChargingSession(
-        chargerId: widget.chargerId,
+      int connectorId = widget.connectorId ?? _extractConnectorId(widget.connectorUid);
+
+      if (connectorId <= 0) {
+        throw Exception('Invalid connector ID. Please scan a valid QR code.');
+      }
+
+      final success = await _chargingController.startChargingSession(
+        connectorId: connectorId,
+        vehicleId: _selectedVehicle!.id,
       );
 
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context); // Close loading dialog
       }
 
-      if (success && mounted && chargingController.currentSession?.data != null) {
+      if (success && mounted) {
         print('\n✅ Charging session started successfully!');
 
-        final sessionData = chargingController.currentSession!.data!;
+        final sessionData = _chargingController.currentSession?.data;
+        final prefs = await SharedPreferences.getInstance();
+        final fallbackSessionId = prefs.getInt('active_session_id') ?? 0;
+        final resolvedSessionId = ChargingService.resolveSessionId(
+          response: _chargingController.currentSession,
+          fallbackSessionId: fallbackSessionId,
+        );
+
+        if (resolvedSessionId > 0) {
+          print('✅ Resolved session ID: $resolvedSessionId');
+        } else {
+          print('⚠️ No session ID returned by backend. Proceeding without it and letting live status recover it.');
+        }
+
+        await _saveVehicleDetailsToStorage(
+          sessionId: resolvedSessionId,
+          vehicle: _selectedVehicle!,
+        );
+
+        if (resolvedSessionId > 0 && sessionData != null) {
+          await ChargingSessionService.saveActiveSession(
+            sessionId: resolvedSessionId,
+            startedAt: DateTime.parse(sessionData.startedAt),
+            status: 'charging',
+            phase: 'starting',
+            transactionId: sessionData.transactionId,
+            vehicleData: {
+              'vehicleName': '${_selectedVehicle!.manufacturer} ${_selectedVehicle!.model}'.trim(),
+              'manufacturer': _selectedVehicle!.manufacturer,
+              'model': _selectedVehicle!.model,
+              'registrationNumber': _selectedVehicle!.registrationNumber,
+              'vehicleId': _selectedVehicle!.id,
+            },
+          );
+        }
+
+        final sessionVehicleName = resolvedSessionId > 0
+            ? prefs.getString('session_${resolvedSessionId}_vehicle_name') ?? 'NOT FOUND'
+            : prefs.getString('vehicle_name') ?? 'NOT FOUND';
+        final storedSessionId = prefs.getInt('active_session_id') ?? 0;
+
+        print('📋 VERIFYING DATA IN STORAGE:');
+        print('   Session-specific name: $sessionVehicleName');
+        print('   Session ID in storage: $storedSessionId');
+        print('   Resolved session ID: $resolvedSessionId');
 
         Map<String, dynamic> chargingDetails = {
-          'sessionId': sessionData.sessionId,
-          'transactionId': sessionData.transactionId,
-          'startedAt': sessionData.startedAt,
+          'sessionId': resolvedSessionId > 0 ? resolvedSessionId : null,
           'vehicleId': _selectedVehicle!.id,
-          'vehicleName': '${_selectedVehicle!.manufacturer} ${_selectedVehicle!.model}',
+          'vehicleName': '${_selectedVehicle!.manufacturer} ${_selectedVehicle!.model}'.trim(),
           'manufacturer': _selectedVehicle!.manufacturer,
           'model': _selectedVehicle!.model,
           'registrationNumber': _selectedVehicle!.registrationNumber,
-          'chargerId': sessionData.charger.id,
-          'chargerName': sessionData.charger.name,
-          'chargerType': sessionData.charger.type,
-          'chargerPowerCapacity': sessionData.charger.powerCapacity,
-          'connectorId': sessionData.connector.id,
-          'connectorName': sessionData.connector.name,
-          'connectorType': sessionData.connector.type,
-          'stationId': sessionData.station.id,
-          'stationName': sessionData.station.name,
-          'stationAddress': sessionData.station.address,
-          'pricingType': sessionData.pricing.type,
-          'pricingRate': sessionData.pricing.rate,
-          'pricingUnit': sessionData.pricing.unit,
-          'currency': sessionData.pricing.currency,
-          'walletBalanceBefore': sessionData.wallet.balanceBefore,
+          'connectorUid': widget.connectorUid,
+          'connectorId': connectorId,
         };
+
+        print('📋 CHARGING DETAILS BEING PASSED:');
+        print('   Session ID: ${chargingDetails['sessionId']}');
+        print('   Vehicle: ${chargingDetails['vehicleName']}');
 
         if (mounted) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => LottiePreparingScreen(
+              builder: (context) => ChargingProgressPage(
                 chargingDetails: chargingDetails,
               ),
             ),
           );
         }
       } else if (mounted) {
-        String errorMessage = chargingController.errorMessage ?? "Failed to start charging";
-        _showErrorDialog(errorMessage);
+        // Show error dialog
+        final errorResponse = _chargingController.getErrorResponse();
+        if (errorResponse != null) {
+          _showErrorDialog(
+            errorResponse.getUserFriendlyMessage(),
+            title: errorResponse.getErrorTitle(),
+            icon: errorResponse.getErrorIcon(),
+            iconColor: errorResponse.getErrorColor(),
+            failedCheck: errorResponse.failedCheck,
+            errorCode: errorResponse.errorCode,
+            actions: errorResponse.getErrorActions(),
+          );
+        } else {
+          _showErrorDialog(
+            _chargingController.errorMessage ?? "Failed to start charging",
+          );
+        }
       }
 
     } catch (e) {
       print('\n❌ EXCEPTION: $e');
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
         _showErrorDialog(e.toString());
       }
     } finally {
@@ -158,7 +271,34 @@ class _VehicleScreenState extends State<VehicleScreen> {
       }
     }
   }
-  void _showErrorDialog(String errorMessage) {
+
+  int _extractConnectorId(String connectorUid) {
+    try {
+      final parts = connectorUid.split('.');
+      if (parts.length >= 2) {
+        final lastPart = parts.last;
+        return int.tryParse(lastPart) ?? 0;
+      }
+      return 0;
+    } catch (e) {
+      print('⚠️ Could not extract connector ID from UID: $connectorUid');
+      return 0;
+    }
+  }
+
+  void _showErrorDialog(
+      String errorMessage, {
+        String? title,
+        IconData? icon,
+        Color? iconColor,
+        String? failedCheck,
+        String? errorCode,
+        List<ErrorAction>? actions,
+      }) {
+    title ??= 'Charging Failed';
+    icon ??= Icons.error_outline;
+    iconColor ??= Colors.red;
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -167,31 +307,33 @@ class _VehicleScreenState extends State<VehicleScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: Container(
             padding: const EdgeInsets.all(24),
+            constraints: const BoxConstraints(maxWidth: 400),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
+                    color: iconColor!.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.error_outline,
-                    color: Colors.red,
+                  child: Icon(
+                    icon,
+                    color: iconColor,
                     size: 48,
                   ),
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  "Charging Failed",
+                  title!,
                   style: GoogleFonts.poppins(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: Colors.black87,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Text(
                   errorMessage,
                   style: GoogleFonts.poppins(
@@ -200,65 +342,153 @@ class _VehicleScreenState extends State<VehicleScreen> {
                   ),
                   textAlign: TextAlign.center,
                 ),
+                if (failedCheck != null || errorCode != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (failedCheck != null)
+                          Row(
+                            children: [
+                              Icon(Icons.info_outline, size: 14, color: Colors.grey.shade600),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Error: $failedCheck',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        if (errorCode != null)
+                          Row(
+                            children: [
+                              Icon(Icons.code, size: 14, color: Colors.grey.shade600),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Code: $errorCode',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(context); // Close dialog
-                          Navigator.pop(context); // Go back to scanner
-                        },
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.grey.shade300),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          "Go Back",
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context); // Close dialog
-                          // Retry charging
-                          _startCharging();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Appcolor.green,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          "Retry",
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                if (actions != null && actions.isNotEmpty)
+                  ..._buildActionButtons(actions),
               ],
             ),
           ),
         );
       },
     );
+  }
+
+  List<Widget> _buildActionButtons(List<ErrorAction> actions) {
+    final List<Widget> buttons = [];
+
+    for (var i = 0; i < actions.length; i++) {
+      final action = actions[i];
+      final isLast = i == actions.length - 1;
+
+      if (action.isPrimary) {
+        buttons.add(
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _handleAction(action.action);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Appcolor.green,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                action.label,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        );
+      } else {
+        buttons.add(
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _handleAction(action.action);
+              },
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Colors.grey.shade300),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                action.label,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      if (!isLast) {
+        buttons.add(const SizedBox(height: 10));
+      }
+    }
+
+    return buttons;
+  }
+
+  void _handleAction(String action) {
+    switch (action) {
+      case 'recharge':
+        Navigator.pushReplacementNamed(context, '/wallet');
+        break;
+      case 'try_another':
+        Navigator.pop(context);
+        Navigator.pop(context);
+        break;
+      case 'retry':
+        _startCharging();
+        break;
+      case 'go_back':
+      default:
+        Navigator.pop(context);
+        break;
+    }
   }
 
   @override
@@ -366,7 +596,7 @@ class _VehicleScreenState extends State<VehicleScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "Charger ID",
+                        "Connector ID",
                         style: GoogleFonts.poppins(
                           fontSize: 11,
                           color: Colors.grey.shade600,
@@ -374,7 +604,7 @@ class _VehicleScreenState extends State<VehicleScreen> {
                         ),
                       ),
                       Text(
-                        widget.chargerId,
+                        widget.connectorUid,
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -450,7 +680,6 @@ class _VehicleScreenState extends State<VehicleScreen> {
                       padding: const EdgeInsets.all(16),
                       child: Row(
                         children: [
-                          // Vehicle Icon with border
                           Container(
                             decoration: BoxDecoration(
                               border: Border.all(
@@ -467,7 +696,6 @@ class _VehicleScreenState extends State<VehicleScreen> {
                             ),
                           ),
                           const SizedBox(width: 16),
-                          // Vehicle Details
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -491,7 +719,6 @@ class _VehicleScreenState extends State<VehicleScreen> {
                               ],
                             ),
                           ),
-                          // Selection indicator
                           if (isSelected)
                             Container(
                               padding: const EdgeInsets.all(4),
@@ -557,3 +784,4 @@ class _VehicleScreenState extends State<VehicleScreen> {
     );
   }
 }
+

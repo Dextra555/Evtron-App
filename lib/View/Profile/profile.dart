@@ -12,8 +12,8 @@ import 'editprofile.dart';
 import 'favourites.dart';
 import 'history.dart';
 import 'support.dart';
-import '../Home/scanner.dart';
-import '../myev/myevs.dart';
+import '../Scanner/scanner.dart';
+import 'myevs.dart';
 import '../Payment/paymentpage.dart';
 
 class Profilepage extends StatefulWidget {
@@ -230,7 +230,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // ---------- Build Methods ----------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -276,9 +275,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _buildMenuItems(),
         const SizedBox(height: 16),
         _buildLogoutButton(),
-        const SizedBox(height: 12),
-        _buildTokenDisplay(), // Display token below logout button
-        const SizedBox(height: 25),
+        // const SizedBox(height: 12),
+        // _buildTokenDisplay(), // Display token below logout button
+        // const SizedBox(height: 25),
       ],
     );
   }
@@ -369,16 +368,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildMenuItems() {
     return Column(
       children: [
-        _buildMenuItem(
-          icon: Icons.favorite_border,
-          title: 'Favorites',
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const FavoriteStationsScreen()),
-            );
-          },
-        ),
+        // _buildMenuItem(
+        //   icon: Icons.favorite_border,
+        //   title: 'Favorites',
+        //   onTap: () {
+        //     Navigator.push(
+        //       context,
+        //       MaterialPageRoute(builder: (context) => const FavoriteStationsScreen()),
+        //     );
+        //   },
+        // ),
         _buildMenuItem(
           icon: Icons.electric_car,
           title: "My Ev's",
@@ -456,7 +455,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // Widget to display the token
   Widget _buildTokenDisplay() {
     if (_authToken == null || _authToken!.isEmpty) {
       return Container(
@@ -582,7 +580,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // Method to copy token to clipboard
   void _copyTokenToClipboard() {
     if (_authToken != null && _authToken!.isNotEmpty) {
       Clipboard.setData(ClipboardData(text: _authToken!));

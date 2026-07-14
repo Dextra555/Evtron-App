@@ -8,6 +8,19 @@ class ChargingStatusService {
   static const String _keyStartedAt = 'charging_started_at';
 
   // Save charging status
+
+  static Future<void> clearChargingStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('charging_status');
+    await prefs.remove('last_charging_status');
+  }
+
+  static Future<void> clearSessionId() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('current_session_id');
+  }
+
+
   static Future<void> saveChargingStatus(String status, {int? sessionId}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyChargingStatus, status);

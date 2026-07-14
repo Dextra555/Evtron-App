@@ -11,10 +11,12 @@ import 'cardetails.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String? emailOrPhone;
+  final String? otp;
 
   const OtpVerificationScreen({
     super.key,
     this.emailOrPhone,
+    this.otp,
   });
 
   @override
@@ -37,7 +39,25 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   void initState() {
     super.initState();
     _startResendTimer();
+
+    // Auto-fill OTP if provided
+    if (widget.otp != null && widget.otp!.length == 4) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _autoFillOtp(widget.otp!);
+      });
+    }
   }
+
+  void _autoFillOtp(String otp) {
+    for (int i = 0; i < otp.length && i < 4; i++) {
+      _otpControllers[i].text = otp[i];
+    }
+    // Auto-verify after filling
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _verifyOtp();
+    });
+  }
+
 
   @override
   void dispose() {

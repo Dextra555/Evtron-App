@@ -67,7 +67,6 @@ class WishlistService {
       }
 
       if (isFavorite) {
-        // Add to wishlist
         final response = await http.post(
           Uri.parse(ApiEndpoints.wishlist),
           headers: {
@@ -86,7 +85,6 @@ class WishlistService {
 
         return response.statusCode == 200 || response.statusCode == 201;
       } else {
-        // Remove from wishlist - first get the wishlist ID
         final wishlistId = await _getWishlistIdForStation(chargingStationId);
 
         if (wishlistId == null) {

@@ -1,3 +1,4 @@
+
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../Model/login_model.dart';
@@ -31,10 +32,20 @@ class LoginController {
       print('Full Response: $data');
       print('==========================================');
 
+      if (response.statusCode == 429) {
+        return {
+          "success": false,
+          "message": "Too many attempts. Please wait a moment and try again.",
+        };
+      }
+
       if (response.statusCode == 200 || response.statusCode == 201) {
+
+        String otp = data['otp']?.toString() ?? '';
         return {
           "success": data["status"] == true || data["success"] == true,
           "message": data["message"] ?? "OTP sent successfully!",
+          "otp": otp,
         };
       } else {
         String errorMessage = 'Failed to send OTP';

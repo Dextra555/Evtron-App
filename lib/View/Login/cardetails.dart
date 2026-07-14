@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../Controller/manufacturer_controller.dart';
 import '../../Controller/vehicle_controller.dart';
 import '../../Model/vehicle_model.dart';
+import '../../Model/manufacturer_model.dart';
 import '../../Theme/colors.dart';
 import '../Home/mapui.dart';
-// Adjust path as needed
 
 class CarDetailsPage extends StatefulWidget {
   const CarDetailsPage({super.key});
@@ -15,48 +16,117 @@ class CarDetailsPage extends StatefulWidget {
 
 class _CarDetailsPageState extends State<CarDetailsPage> {
   final VehicleController _vehicleController = VehicleController();
+  final SettingsController _settingsController = SettingsController();
   final _formKey = GlobalKey<FormState>();
 
   // Controllers for text fields
   final TextEditingController _registrationController = TextEditingController();
 
   // Selected values for dropdowns
-  String? _selectedManufacturer;
-  String? _selectedModel;
+  Manufacturer? _selectedManufacturer;
+  VehicleModel? _selectedModel;
 
   // Loading state
   bool _isLoading = false;
+  bool _isLoadingManufacturers = true;
+  bool _isLoadingModels = false;
 
-  // Static data for manufacturers and models
-  final Map<String, List<String>> _carsData = {
-    'Toyota': ['Camry', 'Corolla', 'Fortuner', 'Innova', 'Land Cruiser', 'Prius', 'Rav4', 'Yaris'],
-    'Honda': ['Civic', 'Accord', 'City', 'CR-V', 'HR-V', 'Pilot', 'Odyssey'],
-    'Hyundai': ['Elantra', 'Sonata', 'Tucson', 'Santa Fe', 'i10', 'i20', 'Creta', 'Verna'],
-    'Mahindra': ['Thar', 'Scorpio', 'XUV700', 'XUV300', 'Bolero', 'Marazzo'],
-    'Tata': ['Nexon', 'Harrier', 'Safari', 'Punch', 'Tiago', 'Tigor', 'Altroz'],
-    'Maruti Suzuki': ['Swift', 'Dzire', 'Baleno', 'Vitara Brezza', 'Ertiga', 'Alto', 'WagonR', 'Ciaz'],
-    'Kia': ['Seltos', 'Sonet', 'Carens', 'EV6'],
-    'Volkswagen': ['Polo', 'Vento', 'Taigun', 'Tiguan', 'Virtus'],
-    'Ford': ['EcoSport', 'Figo', 'Aspire', 'Endeavour'],
-    'Renault': ['Kwid', 'Triber', 'Kiger'],
-    'Nissan': ['Magnite', 'Sunny', 'Micra'],
-    'BMW': ['3 Series', '5 Series', 'X1', 'X3', 'X5'],
-    'Mercedes-Benz': ['C-Class', 'E-Class', 'S-Class', 'GLA', 'GLC', 'GLE'],
-    'Audi': ['A4', 'A6', 'Q3', 'Q5', 'Q7'],
-    'Volvo': ['XC40', 'XC60', 'XC90', 'S60'],
-  };
+  // Dynamic data
+  List<Manufacturer> _manufacturers = [];
+  List<VehicleModel> _models = [];
 
-  List<String> get _availableModels {
-    if (_selectedManufacturer != null && _carsData.containsKey(_selectedManufacturer)) {
-      return _carsData[_selectedManufacturer]!;
-    }
-    return [];
+  @override
+  void initState() {
+    super.initState();
+    _fetchManufacturers();
   }
 
   @override
   void dispose() {
     _registrationController.dispose();
     super.dispose();
+  }
+
+  // Fetch manufacturers from API
+  Future<void> _fetchManufacturers() async {
+    setState(() {
+      _isLoadingManufacturers = true;
+    });
+
+    try {
+      final response = await _settingsController.fetchManufacturers();
+
+      if (response.success && response.data.isNotEmpty) {
+        setState(() {
+          _manufacturers = response.data;
+          _isLoadingManufacturers = false;
+        });
+        print('Manufacturers loaded: ${_manufacturers.length}');
+      } else {
+        setState(() {
+          _isLoadingManufacturers = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to load manufacturers'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isLoadingManufacturers = false;
+      });
+      print('Error fetching manufacturers: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error loading manufacturers'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Fetch models when manufacturer is selected
+  Future<void> _fetchModels(int manufacturerId) async {
+    setState(() {
+      _isLoadingModels = true;
+      _selectedModel = null; // Reset selected model
+      _models = []; // Clear previous models
+    });
+
+    try {
+      final response = await _settingsController.fetchModels(manufacturerId);
+
+      if (response.success && response.data.isNotEmpty) {
+        setState(() {
+          _models = response.data;
+          _isLoadingModels = false;
+        });
+        print('Models loaded: ${_models.length}');
+      } else {
+        setState(() {
+          _isLoadingModels = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No models found for this manufacturer'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isLoadingModels = false;
+      });
+      print('Error fetching models: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error loading models'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _saveVehicle() async {
@@ -70,10 +140,10 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
     });
 
     try {
-      // Create vehicle model
+      // Create vehicle model using ONLY the names (no IDs)
       final AddVehicleModel vehicleModel = AddVehicleModel(
-        manufacturer: _selectedManufacturer!,
-        model: _selectedModel!,
+        manufacturer: _selectedManufacturer!.name,
+        model: _selectedModel!.name,
         registrationNumber: _registrationController.text.trim(),
       );
 
@@ -96,7 +166,6 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
       print('==========================================');
 
       if (response.status) {
-        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message),
@@ -105,13 +174,11 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
           ),
         );
 
-        // Navigate to map screen
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const MapScreen()),
         );
       } else {
-        // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(response.message),
@@ -186,15 +253,19 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
                   hint: "Select manufacturer",
                   icon: Icons.business_rounded,
                   value: _selectedManufacturer,
-                  items: _carsData.keys.toList(),
-                  onChanged: (value) {
+                  items: _manufacturers,
+                  isLoading: _isLoadingManufacturers,
+                  onChanged: (Manufacturer? manufacturer) {
                     setState(() {
-                      _selectedManufacturer = value;
-                      _selectedModel = null; // Reset model when manufacturer changes
+                      _selectedManufacturer = manufacturer;
+                      // Fetch models when manufacturer is selected
+                      if (manufacturer != null) {
+                        _fetchModels(manufacturer.id);
+                      }
                     });
                   },
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
+                    if (value == null) {
                       return 'Please select a manufacturer';
                     }
                     return null;
@@ -203,19 +274,23 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
 
                 const SizedBox(height: 20),
 
+                /// Model Dropdown
                 _buildModernDropdown(
                   label: "Model",
-                  hint: "Select model",
+                  hint: _selectedManufacturer == null
+                      ? "Select manufacturer first"
+                      : "Select model",
                   icon: Icons.directions_car_rounded,
                   value: _selectedModel,
-                  items: _availableModels,
-                  onChanged: (value) {
+                  items: _models,
+                  isLoading: _isLoadingModels,
+                  onChanged: (VehicleModel? model) {
                     setState(() {
-                      _selectedModel = value;
+                      _selectedModel = model;
                     });
                   },
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
+                    if (value == null) {
                       return 'Please select a model';
                     }
                     return null;
@@ -309,14 +384,16 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
     );
   }
 
-  Widget _buildModernDropdown({
+  // Updated dropdown builder with generic type support
+  Widget _buildModernDropdown<T>({
     required String label,
     required String hint,
     required IconData icon,
-    required String? value,
-    required List<String> items,
-    required Function(String?) onChanged,  // This should NOT be nullable
-    required String? Function(String?)? validator,
+    required T? value,
+    required List<T> items,
+    required bool isLoading,
+    required Function(T?) onChanged,
+    required String? Function(T?)? validator,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,7 +408,7 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
           ),
         ),
         const SizedBox(height: 6),
-        DropdownButtonFormField<String>(
+        DropdownButtonFormField<T>(
           value: value,
           hint: Text(
             hint,
@@ -342,9 +419,20 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
             ),
           ),
           validator: validator,
-          onChanged: onChanged,  // Now accepts nullable or non-nullable
+          onChanged: isLoading ? null : onChanged,
           decoration: InputDecoration(
-            prefixIcon: Icon(
+            prefixIcon: isLoading
+                ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: Padding(
+                padding: EdgeInsets.all(8.0),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
+              ),
+            )
+                : Icon(
               icon,
               color: Appcolor.green.withOpacity(0.7),
               size: 18,
@@ -391,11 +479,17 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
             filled: true,
             fillColor: Appcolor.white,
           ),
-          items: items.map((String item) {
-            return DropdownMenuItem<String>(
+          items: items.map((T item) {
+            String displayText = '';
+            if (item is Manufacturer) {
+              displayText = item.name;
+            } else if (item is VehicleModel) {
+              displayText = item.name;
+            }
+            return DropdownMenuItem<T>(
               value: item,
               child: Text(
-                item,
+                displayText,
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w400,
@@ -404,7 +498,6 @@ class _CarDetailsPageState extends State<CarDetailsPage> {
               ),
             );
           }).toList(),
-          // Remove selectedItemBuilder - it's not needed and can cause issues
         ),
       ],
     );

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
@@ -6,6 +7,32 @@ import 'package:open_file/open_file.dart';
 import '../Model/invoice_model.dart';
 
 class PdfService {
+  static pw.MemoryImage? _cachedLogo;
+
+  static Future<pw.MemoryImage?> _loadLogoImage() async {
+    if (_cachedLogo != null) return _cachedLogo!;
+
+    final logoPaths = [
+      'assets/logo.png',
+      'assets/images/logo.png',
+      'assets/logo/logo.png',
+      'assets/icon/icon.png',
+      'assets/logo.jpg',
+    ];
+
+    for (final path in logoPaths) {
+      try {
+        final logoData = await rootBundle.load(path);
+        final bytes = logoData.buffer.asUint8List();
+        if (bytes.isNotEmpty) {
+          _cachedLogo = pw.MemoryImage(bytes);
+          return _cachedLogo!;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
   static String _formatDateOnly(String dateTimeStr) {
     try {
       final dateTime = DateTime.parse(dateTimeStr);
@@ -15,11 +42,10 @@ class PdfService {
           '${localTime.month.toString().padLeft(2, '0')}-'
           '${localTime.day.toString().padLeft(2, '0')}';
     } catch (e) {
-      // If parsing fails, try to extract date from the string
       try {
         if (dateTimeStr.contains('T')) {
           final parts = dateTimeStr.split('T');
-          return parts[0]; // Returns "2026-07-04"
+          return parts[0];
         }
         return dateTimeStr;
       } catch (_) {
@@ -39,7 +65,6 @@ class PdfService {
           '${localTime.hour.toString().padLeft(2, '0')}:'
           '${localTime.minute.toString().padLeft(2, '0')}';
     } catch (e) {
-      // If parsing fails, try to clean up the string manually
       try {
         if (dateTimeStr.contains('T')) {
           final parts = dateTimeStr.split('T');
@@ -56,7 +81,6 @@ class PdfService {
             if (timeWithZone.contains('-')) {
               timeWithZone = timeWithZone.substring(0, timeWithZone.indexOf('-'));
             }
-            // Format time to HH:MM
             if (timeWithZone.length >= 5) {
               timePart = ', ${timeWithZone.substring(0, 5)}';
             }
@@ -71,81 +95,115 @@ class PdfService {
   }
 
   static Future<String> generateInvoicePdf(InvoiceData invoiceData) async {
+    print('Invoice PDF payload:');
+    print(invoiceData.toString());
+
     final pdf = pw.Document();
+    final logoImage = await _loadLogoImage();
 
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
+        margin: const pw.EdgeInsets.all(40),
         build: (pw.Context context) {
+          // Get company name or use default static name
+          final companyName = invoiceData.company?.name?.isNotEmpty == true
+              ? invoiceData.company!.name!
+              : 'ZEON ELECTRIC PRIVATE LIMITED';
+          final companyAddress = invoiceData.company?.address?.isNotEmpty == true
+              ? invoiceData.company!.address!
+              : '';
+          final companyCityLine = [
+            invoiceData.company?.city,
+            invoiceData.company?.state,
+            invoiceData.company?.pincode,
+          ].where((value) => value != null && value!.isNotEmpty).map((value) => value!).join(', ');
+          final companyGstin = (invoiceData.station.gstin.isNotEmpty
+              ? invoiceData.station.gstin
+              : invoiceData.gst.gstin.isNotEmpty
+              ? invoiceData.gst.gstin
+              : 'NA');
+
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              // Header
+              // FIRST ROW - Logo and TAX INVOICE with spacing
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
+                  // Left side - TAX INVOICE text with spacing
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       pw.Text(
-                        'INVOICE',
+                        'TAX INVOICE',
                         style: pw.TextStyle(
-                          fontSize: 28,
+                          fontSize: 26,
                           fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.green700,
+                          letterSpacing: 1.5,
                         ),
                       ),
-                      pw.Text(
-                        'EV Charging Session',
-                        style: pw.TextStyle(
-                          fontSize: 16,
-                          color: PdfColors.grey600,
+                      pw.SizedBox(height: 8), // Space after TAX INVOICE
+                      // Invoice details in a separate row below
+                      pw.Container(
+                        width: 220,
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Row(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
+                                pw.Expanded(
+                                  child: pw.Column(
+                                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                    children: [
+                                      pw.Text(
+                                        'INVOICE DATE : ${_formatDateOnly(invoiceData.invoiceDate)}',
+                                        style: pw.TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: pw.FontWeight.bold,
+                                        ),
+                                      ),
+                                      pw.SizedBox(height: 4),
+                                      pw.Text(
+                                        'INVOICE NUMBER : ${invoiceData.invoiceNumber}',
+                                        style: pw.TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: pw.FontWeight.bold,
+                                        ),
+                                      ),
+                                      pw.SizedBox(height: 4),
+                                      pw.Text(
+                                        'TRANSACTION ID : ${invoiceData.tid ?? invoiceData.payment.receiptNumber ?? 'N/A'}',
+                                        style: pw.TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: pw.FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text(
-                        invoiceData.invoiceNumber,
-                        style: pw.TextStyle(
-                          fontSize: 18,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                      pw.Text(
-                        'Date: ${_formatDateOnly(invoiceData.invoiceDate)}', // ✅ UPDATED
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          color: PdfColors.grey600,
-                        ),
-                      ),
-                      pw.Text(
-                        'Status: ${invoiceData.status.toUpperCase()}',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          color: invoiceData.status == 'generated'
-                              ? PdfColors.green700
-                              : PdfColors.orange,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+                  // Right side - Logo
+                  if (logoImage != null)
+                    pw.Container(
+                      width: 120,
+                      height: 80,
+                      child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+                    ),
                 ],
               ),
-              pw.SizedBox(height: 30),
 
-              // Divider
-              pw.Container(
-                height: 1,
-                color: PdfColors.grey300,
-              ),
-              pw.SizedBox(height: 20),
+              pw.SizedBox(height: 18), // Space after first row
 
-              // User & Station Info
+              // SECOND ROW - Company and Billed To information
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
@@ -154,16 +212,97 @@ class PdfService {
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text(
-                          'Bill To:',
+                          companyName,
                           style: pw.TextStyle(
                             fontSize: 14,
                             fontWeight: pw.FontWeight.bold,
                           ),
                         ),
+                        pw.SizedBox(height: 2),
+                        if (companyAddress.isNotEmpty)
+                          pw.Text(
+                            companyAddress,
+                            style: pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+                          ),
+                        if (companyCityLine.isNotEmpty)
+                          pw.Text(
+                            companyCityLine,
+                            style: pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+                          ),
                         pw.SizedBox(height: 4),
-                        pw.Text(invoiceData.user.name),
-                        pw.Text(invoiceData.user.email),
-                        pw.Text(invoiceData.user.phone),
+                        pw.Text(
+                          'GSTIN: $companyGstin',
+                          style: pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 16),
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'BILLED TO',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          invoiceData.user.name,
+                          style: pw.TextStyle(fontSize: 11),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'BUSINESS NAME: ${invoiceData.user.businessName ?? 'NA'}',
+                          style: pw.TextStyle(fontSize: 11),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'ADDRESS: ${invoiceData.user.address ?? 'NA'}',
+                          style: pw.TextStyle(fontSize: 11),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'GSTIN: ${invoiceData.user.gstin ?? 'NA'}',
+                          style: pw.TextStyle(fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 16),
+              pw.Container(
+                height: 1,
+                color: PdfColors.grey300,
+              ),
+              pw.SizedBox(height: 16),
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'STATION',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          invoiceData.station.name,
+                          style: pw.TextStyle(fontSize: 11),
+                        ),
+                        pw.Text(
+                          invoiceData.station.address,
+                          style: pw.TextStyle(fontSize: 11),
+                        ),
                       ],
                     ),
                   ),
@@ -172,15 +311,13 @@ class PdfService {
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text(
-                          'Station:',
-                          style: pw.TextStyle(
-                            fontSize: 14,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
+                          'CHARGE POINT: ${invoiceData.charger}',
+                          style: pw.TextStyle(fontSize: 11),
                         ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(invoiceData.station.name),
-                        pw.Text(invoiceData.station.address),
+                        pw.Text(
+                          'CONNECTOR TYPE: ${invoiceData.connector}',
+                          style: pw.TextStyle(fontSize: 11),
+                        ),
                       ],
                     ),
                   ),
@@ -188,52 +325,238 @@ class PdfService {
               ),
               pw.SizedBox(height: 20),
 
-              // Session Details
+              // RESTRUCTURED TABLE - WITHOUT DIVIDER LINES
               pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  color: PdfColors.grey100,
-                  borderRadius: pw.BorderRadius.circular(8),
-                ),
-                child: pw.Row(
+                child: pw.Column(
                   children: [
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    // HEADER ROW
+                    pw.Container(
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.grey300,
+                      ),
+                      padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+                      child: pw.Row(
                         children: [
-                          pw.Text(
-                            'Session ID: ${invoiceData.session.id}',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
+                          _buildTableHeaderCellWithoutDivider('HSN CODE', flex: 2),
+                          _buildTableHeaderCellWithoutDivider('ENERGY', flex: 2),
+                          _buildTableHeaderCellWithoutDivider('TARIFF', flex: 2),
+                          _buildTableHeaderCellWithoutDivider('CHARGED ON', flex: 3),
+                          _buildTableHeaderCellWithoutDivider('DURATION & FEES', flex: 4),
+                          _buildTableHeaderCellWithoutDivider(
+                            'AMOUNT (${invoiceData.billing.currency})',
+                            flex: 3,
+                            alignment: pw.Alignment.centerRight,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // DATA VALUES ROW (First row with main values)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 0),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          _buildTableDataCellWithoutDivider(
+                            invoiceData.gst.hsnSac.isNotEmpty ? invoiceData.gst.hsnSac : 'NA',
+                            flex: 2,
+                            alignment: pw.Alignment.center,
+                          ),
+                          _buildTableDataCellWithoutDivider(
+                            '${invoiceData.energy.consumedKwh.toStringAsFixed(2)} kWh',
+                            flex: 2,
+                            alignment: pw.Alignment.center,
+                          ),
+                          _buildTableDataCellWithoutDivider(
+                            '${invoiceData.energy.ratePerKwh.toStringAsFixed(1)} /kWh',
+                            flex: 2,
+                            alignment: pw.Alignment.center,
+                          ),
+                          // CHARGED ON field with date and time on separate lines
+                          _buildTableDataCellWithTwoLines(
+                            _formatDateOnly(invoiceData.session.startTime),
+                            _formatTime(invoiceData.session.startTime),
+                            flex: 3,
+                            alignment: pw.Alignment.center,
+                          ),
+                          // DURATION with HH:MM:SS format
+                          _buildTableDataCellWithoutDivider(
+                            _formatDurationHHMMSS(invoiceData.session.durationMinutes),
+                            flex: 4,
+                            alignment: pw.Alignment.center,
+                          ),
+                          // Amount centered
+                          _buildTableDataCellWithoutDivider(
+                            '${invoiceData.costBreakdown.energyCost.toStringAsFixed(2)}',
+                            flex: 3,
+                            alignment: pw.Alignment.center,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // SESSION FEE ROW
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          pw.Expanded(flex: 9, child: pw.Container()),
+                          pw.Expanded(
+                            flex: 4,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                'Session Fee:',
+                                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                              ),
                             ),
                           ),
-                          pw.Text(
-                            'Charger: ${invoiceData.charger}',
-                            style: const pw.TextStyle(fontSize: 12),
-                          ),
-                          pw.Text(
-                            'Connector: ${invoiceData.connector}',
-                            style: const pw.TextStyle(fontSize: 12),
+                          pw.Expanded(
+                            flex: 3,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                '${invoiceData.costBreakdown.serviceFee.toStringAsFixed(2)}',
+                                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+
+                    // IDLE FEE ROW
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
                         children: [
-                          pw.Text(
-                            'Start: ${_formatDateTimeString(invoiceData.session.startTime)}', // ✅ UPDATED
-                            style: const pw.TextStyle(fontSize: 12),
+                          pw.Expanded(flex: 9, child: pw.Container()),
+                          pw.Expanded(
+                            flex: 4,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                'Idle Fee:',
+                                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                              ),
+                            ),
                           ),
-                          pw.Text(
-                            'End: ${_formatDateTimeString(invoiceData.session.endTime)}', // ✅ UPDATED
-                            style: const pw.TextStyle(fontSize: 12),
+                          pw.Expanded(
+                            flex: 3,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                '${invoiceData.costBreakdown.idleCost.toStringAsFixed(2)}',
+                                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                              ),
+                            ),
                           ),
-                          pw.Text(
-                            'Duration: ${invoiceData.session.durationMinutes} minutes',
-                            style: const pw.TextStyle(fontSize: 12),
+                        ],
+                      ),
+                    ),
+
+                    // CGST ROW
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          pw.Expanded(flex: 9, child: pw.Container()),
+                          pw.Expanded(
+                            flex: 4,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                'CGST (9%):',
+                                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 3,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                '${invoiceData.gst.cgstAmount.toStringAsFixed(2)}',
+                                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // SGST ROW
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          pw.Expanded(flex: 9, child: pw.Container()),
+                          pw.Expanded(
+                            flex: 4,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                'SGST (9%):',
+                                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 3,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                '${invoiceData.gst.sgstAmount.toStringAsFixed(2)}',
+                                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    pw.SizedBox(height: 5),
+                    // TOTAL ROW
+                    pw.Container(
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.grey100,
+                      ),
+                      padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 0),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          pw.Expanded(flex: 9, child: pw.Container()),
+                          pw.Expanded(
+                            flex: 4,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                'TOTAL:',
+                                style: pw.TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: PdfColors.grey800,
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 3,
+                            child: pw.Align(
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                '${invoiceData.billing.total.toStringAsFixed(2)}',
+                                style: pw.TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: PdfColors.grey800,
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -241,112 +564,36 @@ class PdfService {
                   ],
                 ),
               ),
-              pw.SizedBox(height: 20),
 
-              // Energy Details
+              pw.SizedBox(height: 16),
+
+              // Payment Method
               pw.Text(
-                'Energy Details',
+                'PAYMENT METHOD : ${invoiceData.payment.method.toUpperCase()}',
                 style: pw.TextStyle(
-                  fontSize: 16,
+                  fontSize: 12,
                   fontWeight: pw.FontWeight.bold,
                 ),
               ),
               pw.SizedBox(height: 8),
-              pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey300),
-                  borderRadius: pw.BorderRadius.circular(8),
-                ),
-                child: pw.Column(
-                  children: [
-                    _buildRow('Energy Consumed', '${invoiceData.energy.consumedKwh.toStringAsFixed(2)} kWh'),
-                    _buildRow('Rate per kWh', '${invoiceData.billing.currency} ${invoiceData.energy.ratePerKwh.toStringAsFixed(2)}'),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 20),
 
-              // Cost Breakdown
+              // Amount in Words
               pw.Text(
-                'Cost Breakdown',
+                'AMOUNT IN WORDS : ${_numberToWords(invoiceData.billing.total)}',
                 style: pw.TextStyle(
-                  fontSize: 16,
+                  fontSize: 11,
                   fontWeight: pw.FontWeight.bold,
                 ),
               ),
-              pw.SizedBox(height: 8),
-              pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey300),
-                  borderRadius: pw.BorderRadius.circular(8),
-                ),
-                child: pw.Column(
-                  children: [
-                    _buildRow('Energy Cost', '${invoiceData.billing.currency} ${invoiceData.costBreakdown.energyCost.toStringAsFixed(2)}'),
-                    if (invoiceData.costBreakdown.idleCost > 0)
-                      _buildRow('Idle Cost', '${invoiceData.billing.currency} ${invoiceData.costBreakdown.idleCost.toStringAsFixed(2)}'),
-                    if (invoiceData.costBreakdown.serviceFee > 0)
-                      _buildRow('Service Fee', '${invoiceData.billing.currency} ${invoiceData.costBreakdown.serviceFee.toStringAsFixed(2)}'),
-                    if (invoiceData.costBreakdown.parkingFee > 0)
-                      _buildRow('Parking Fee', '${invoiceData.billing.currency} ${invoiceData.costBreakdown.parkingFee.toStringAsFixed(2)}'),
-                    pw.Divider(),
-                    if (invoiceData.billing.tax > 0)
-                      _buildRow('Tax (${invoiceData.billing.taxPercentage.toStringAsFixed(0)}%)', '${invoiceData.billing.currency} ${invoiceData.billing.tax.toStringAsFixed(2)}'),
-                    _buildRow(
-                      'Total',
-                      '${invoiceData.billing.currency} ${invoiceData.billing.total.toStringAsFixed(2)}',
-                      isTotal: true,
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 20),
 
-              // Payment Details
-              pw.Text(
-                'Payment Details',
-                style: pw.TextStyle(
-                  fontSize: 16,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 8),
-              pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey300),
-                  borderRadius: pw.BorderRadius.circular(8),
-                ),
-                child: pw.Column(
-                  children: [
-                    _buildRow('Payment Method', invoiceData.payment.method.toUpperCase()),
-                    if (invoiceData.payment.receiptNumber != null)
-                      _buildRow('Receipt Number', invoiceData.payment.receiptNumber!),
-                    _buildRow('Wallet Debited', '${invoiceData.billing.currency} ${invoiceData.payment.walletDebits.toStringAsFixed(2)}'),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 30),
-
-              // Footer
+              pw.SizedBox(height: 50),
+              // Removed footer text completely
               pw.Center(
                 child: pw.Text(
-                  'Thank you for choosing EVTRON!',
+                  'THIS IS A COMPUTER GENERATED INVOICE',
                   style: pw.TextStyle(
-                    fontSize: 14,
+                    fontSize: 9,
                     fontWeight: pw.FontWeight.bold,
-                    color: PdfColors.green700,
-                  ),
-                ),
-              ),
-              pw.SizedBox(height: 4),
-              pw.Center(
-                child: pw.Text(
-                  'This is a system generated invoice',
-                  style: pw.TextStyle(
-                    fontSize: 10,
                     color: PdfColors.grey600,
                   ),
                 ),
@@ -357,7 +604,6 @@ class PdfService {
       ),
     );
 
-    // Save PDF
     final directory = await getApplicationDocumentsDirectory();
     final filePath = '${directory.path}/invoice_${invoiceData.invoiceNumber}.pdf';
     final file = File(filePath);
@@ -366,35 +612,155 @@ class PdfService {
     return filePath;
   }
 
-  static pw.Widget _buildRow(String label, String value, {bool isTotal = false}) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 4),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Text(
-            label,
-            style: pw.TextStyle(
-              fontSize: isTotal ? 14 : 12,
-              fontWeight: isTotal ? pw.FontWeight.bold : pw.FontWeight.normal,
-            ),
+  static String _formatDurationHHMMSS(int minutes) {
+    final hours = minutes ~/ 60;
+    final mins = minutes % 60;
+    return '${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}:00';
+  }
+
+  static pw.Widget _buildTableDataCellWithTwoLines(
+      String line1,
+      String line2, {
+        int flex = 1,
+        pw.Alignment alignment = pw.Alignment.center,
+      }) {
+    return pw.Expanded(
+      flex: flex,
+      child: pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: pw.Align(
+          alignment: alignment,
+          child: pw.Column(
+            mainAxisSize: pw.MainAxisSize.min,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Text(
+                line1,
+                style: pw.TextStyle(
+                  fontSize: 9,
+                ),
+              ),
+              pw.Text(
+                line2,
+                style: pw.TextStyle(
+                  fontSize: 8,
+                  color: PdfColors.grey700,
+                ),
+              ),
+            ],
           ),
-          pw.Text(
-            value,
-            style: pw.TextStyle(
-              fontSize: isTotal ? 14 : 12,
-              fontWeight: isTotal ? pw.FontWeight.bold : pw.FontWeight.normal,
-              color: isTotal ? PdfColors.green700 : null,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
+  static pw.Widget _buildTableHeaderCellWithoutDivider(
+      String text, {
+        int flex = 1,
+        pw.Alignment alignment = pw.Alignment.center,
+      }) {
+    return pw.Expanded(
+      flex: flex,
+      child: pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: pw.Align(
+          alignment: alignment,
+          child: pw.Text(
+            text,
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.grey800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _buildTableDataCellWithoutDivider(
+      String text, {
+        int flex = 1,
+        bool isBold = false,
+        pw.Alignment alignment = pw.Alignment.centerLeft,
+      }) {
+    return pw.Expanded(
+      flex: flex,
+      child: pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: pw.Align(
+          alignment: alignment,
+          child: pw.Text(
+            text,
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _formatTime(String dateTimeStr) {
+    try {
+      final dateTime = DateTime.parse(dateTimeStr);
+      final localTime = dateTime.toLocal();
+      final hour = localTime.hour;
+      final minute = localTime.minute;
+      final ampm = hour >= 12 ? 'pm' : 'am';
+      final hour12 = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+      return '${hour12.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $ampm';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static String _formatDuration(int minutes) {
+    final hours = minutes ~/ 60;
+    final mins = minutes % 60;
+    return '${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}:00';
+  }
+
+  static String _numberToWords(double number) {
+    final parts = number.toStringAsFixed(2).split('.');
+    final whole = int.parse(parts[0]);
+    final decimal = int.parse(parts[1]);
+
+    final units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+      'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen',
+      'Eighteen', 'Nineteen'];
+    final tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+    String convertHundreds(int num) {
+      if (num == 0) return '';
+      if (num < 20) return units[num];
+      if (num < 100) {
+        final ten = tens[num ~/ 10];
+        final unit = num % 10;
+        return unit == 0 ? ten : '$ten ${units[unit]}';
+      }
+      final hundred = units[num ~/ 100];
+      final remainder = num % 100;
+      return remainder == 0 ? '$hundred Hundred' : '$hundred Hundred and ${convertHundreds(remainder)}';
+    }
+
+    String result = '';
+    if (whole >= 1000) {
+      final thousands = whole ~/ 1000;
+      final remainder = whole % 1000;
+      result = '${convertHundreds(thousands)} Thousand';
+      if (remainder > 0) {
+        result += ' ${convertHundreds(remainder)}';
+      }
+    } else {
+      result = convertHundreds(whole);
+    }
+
+    return '${result} Rupees And ${decimal.toString().padLeft(2, '0')} Paise Only';
+  }
 
   static Future<void> openPdf(String filePath) async {
     await OpenFile.open(filePath);
   }
 }
-

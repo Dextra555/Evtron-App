@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:evtron/View/Login/splashscreen.dart';
 import 'Controller/complaint_controller.dart';
-import 'Controller/map_controller.dart';
 import 'Controller/payment_history_controller.dart';
-import 'Model/charging_history_viewmodel.dart';
 import 'View/Home/homepage.dart';
 import 'View/Login/splash.dart';
 
@@ -23,9 +21,9 @@ void main() async {
           create: (_) => WishlistController(),
         ),
 
-        ChangeNotifierProvider(
-          create: (_) => ChargingHistoryViewModel(),
-        ),
+        // ChangeNotifierProvider(
+        //   create: (_) => ChargingHistoryViewModel(),
+        // ),
 
         ChangeNotifierProvider(
           create: (_) => PaymentHistoryController(),

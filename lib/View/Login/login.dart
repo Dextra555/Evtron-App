@@ -26,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isBiometricLoading = false;
   bool _isBiometricAvailable = false;
   bool _isLoading = false;
+  DateTime? _lastRequestTime;
 
   final LocalAuthentication _localAuth = LocalAuthentication();
 
@@ -71,8 +72,30 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendOtp() async {
-    if (_emailPhoneController.text.trim().length != 10) {
+    // Prevent multiple simultaneous requests
+    if (_isLoading) {
+      return;
+    }
+
+    // Debounce - prevent requests within 5 seconds
+    if (_lastRequestTime != null) {
+      final timeSinceLastRequest = DateTime.now().difference(_lastRequestTime!);
+      if (timeSinceLastRequest.inSeconds < 5) {
+        _showError("Please wait ${5 - timeSinceLastRequest.inSeconds} seconds before trying again");
+        return;
+      }
+    }
+
+    final phoneNumber = _emailPhoneController.text.trim();
+
+    // Validate phone number
+    if (phoneNumber.length != 10) {
       _showError("Please enter a valid 10-digit phone number");
+      return;
+    }
+
+    if (!RegExp(r'^[0-9]{10}$').hasMatch(phoneNumber)) {
+      _showError("Please enter a valid phone number with only digits");
       return;
     }
 
@@ -81,10 +104,13 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     final sendOtpModel = SendOtpModel(
-      phone: _emailPhoneController.text.trim(),
+      phone: phoneNumber,
     );
 
     final result = await _loginController.sendOtp(sendOtpModel);
+
+    // Update last request time
+    _lastRequestTime = DateTime.now();
 
     if (mounted) {
       setState(() {
@@ -94,13 +120,16 @@ class _LoginScreenState extends State<LoginScreen> {
       if (result["success"] == true) {
         _showSuccess(result["message"]);
 
+        String otp = result["otp"]?.toString() ?? '';
+
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) {
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => OtpVerificationScreen(
-                  emailOrPhone: _emailPhoneController.text,
+                  emailOrPhone: phoneNumber,
+                  otp: otp,
                 ),
               ),
             );
@@ -156,7 +185,6 @@ class _LoginScreenState extends State<LoginScreen> {
         biometricOnly: false,
       );
       if (mounted) {
-
         if (isAuthenticated) {
           await SessionManager.setLoggedIn(true);
           await SessionManager.setUserPhone(_emailPhoneController.text);
@@ -164,15 +192,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
           if (mounted) {
             Future.delayed(const Duration(milliseconds: 500), () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (context) => const Homepage()),
-                );
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const Homepage()),
+              );
             });
           }
-        }
-
-        else {
+        } else {
           _showError("Authentication failed. Please try again.");
         }
       }
@@ -327,10 +353,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 _buildContinueButton(),
                 const SizedBox(height: 20),
                 _buildDivider(),
-                // if (_isBiometricAvailable) ...[
-                //   const SizedBox(height: 16),
-                //   _buildBiometricButton(),
-                // ],
+                if (_isBiometricAvailable) ...[
+                  // const SizedBox(height: 16),
+                  // _buildBiometricButton(),
+                ],
                 const SizedBox(height: 22),
                 _buildSignUpLink(),
               ],
@@ -364,8 +390,7 @@ class _LoginScreenState extends State<LoginScreen> {
               width: 1.5,
             ),
           ),
-          child:
-          TextField(
+          child: TextField(
             controller: _emailPhoneController,
             focusNode: _focusNode,
             keyboardType: TextInputType.phone,
@@ -379,7 +404,7 @@ class _LoginScreenState extends State<LoginScreen> {
               color: Appcolor.black,
             ),
             decoration: InputDecoration(
-              counterText: "", // hides 0/10 counter
+              counterText: "",
               hintText: "Enter your phone number",
               hintStyle: GoogleFonts.poppins(
                 color: Colors.grey.shade400,
@@ -403,11 +428,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildContinueButton() {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: double.infinity,
-      height: 50,
-      child: Container(
+    return GestureDetector(
+      onTap: _isLoading ? null : _sendOtp,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: double.infinity,
+        height: 50,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             colors: [Color(0xFF8EC63F), Color(0xFF6AAE2A)],
@@ -421,17 +447,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ],
         ),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.transparent,
-            foregroundColor: Appcolor.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            shadowColor: Colors.transparent,
-          ),
-          onPressed: _isLoading ? null : _sendOtp,
+        child: Center(
           child: _isLoading
               ? const SizedBox(
             height: 20,
@@ -447,6 +463,7 @@ class _LoginScreenState extends State<LoginScreen> {
               fontSize: 14,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.5,
+              color: Appcolor.white,
             ),
           ),
         ),
@@ -484,58 +501,58 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildBiometricButton() {
-    return GestureDetector(
-      onTap: _isBiometricLoading ? null : _authenticateWithBiometrics,
-      child: Container(
-        width: double.infinity,
-        height: 48,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              _primaryGreen.withOpacity(0.1),
-              _lightGreen.withOpacity(0.05),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: _primaryGreen.withOpacity(0.3),
-            width: 1,
-          ),
-        ),
-        child: Center(
-          child: _isBiometricLoading
-              ? SizedBox(
-            height: 20,
-            width: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(_primaryGreen),
-            ),
-          )
-              : Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.fingerprint,
-                color: _primaryGreen,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                "Use Biometric Login",
-                style: GoogleFonts.poppins(
-                  color: _primaryGreen,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // Widget _buildBiometricButton() {
+  //   return GestureDetector(
+  //     onTap: _isBiometricLoading ? null : _authenticateWithBiometrics,
+  //     child: Container(
+  //       width: double.infinity,
+  //       height: 48,
+  //       decoration: BoxDecoration(
+  //         gradient: LinearGradient(
+  //           colors: [
+  //             _primaryGreen.withOpacity(0.1),
+  //             _lightGreen.withOpacity(0.05),
+  //           ],
+  //         ),
+  //         borderRadius: BorderRadius.circular(14),
+  //         border: Border.all(
+  //           color: _primaryGreen.withOpacity(0.3),
+  //           width: 1,
+  //         ),
+  //       ),
+  //       child: Center(
+  //         child: _isBiometricLoading
+  //             ? SizedBox(
+  //           height: 20,
+  //           width: 20,
+  //           child: CircularProgressIndicator(
+  //             strokeWidth: 2,
+  //             valueColor: AlwaysStoppedAnimation<Color>(_primaryGreen),
+  //           ),
+  //         )
+  //             : Row(
+  //           mainAxisAlignment: MainAxisAlignment.center,
+  //           children: [
+  //             Icon(
+  //               Icons.fingerprint,
+  //               color: _primaryGreen,
+  //               size: 20,
+  //             ),
+  //             const SizedBox(width: 8),
+  //             Text(
+  //               "Use Biometric Login",
+  //               style: GoogleFonts.poppins(
+  //                 color: _primaryGreen,
+  //                 fontSize: 13,
+  //                 fontWeight: FontWeight.w600,
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //       ),
+  //     ),
+  //   );
+  // }
 
   Widget _buildSignUpLink() {
     return Row(
@@ -657,4 +674,5 @@ class FadeInUp extends StatelessWidget {
     );
   }
 }
+
 

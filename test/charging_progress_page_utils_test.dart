@@ -15,5 +15,19 @@ void main() {
       expect(formatDisplayValue('   '), 'N/A');
       expect(formatDisplayValue('Ac Charger 2'), 'Ac Charger 2');
     });
+
+    test('adds wall-clock time since the latest API response', () {
+      final now = DateTime(2024, 1, 1, 12, 0, 0);
+      final baseDuration = const Duration(minutes: 2, seconds: 15);
+      final lastUpdateTime = now.subtract(const Duration(seconds: 5));
+
+      final updatedDuration = calculateElapsedDuration(
+        baseDuration: baseDuration,
+        lastUpdateTime: lastUpdateTime,
+        now: now,
+      );
+
+      expect(updatedDuration, const Duration(minutes: 2, seconds: 20));
+    });
   });
 }

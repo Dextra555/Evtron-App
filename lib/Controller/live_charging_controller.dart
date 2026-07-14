@@ -25,6 +25,8 @@ class LiveChargingController extends ChangeNotifier {
   int _consecutiveFailures = 0;
   static const int maxConsecutiveFailures = 3;
   bool _shouldPoll = true;
+  bool _pollingStoppedByNetwork = false;
+  bool get pollingStoppedByNetwork => _pollingStoppedByNetwork;
 
   Timer? _debounceTimer;
   bool _hasPendingUpdate = false;
@@ -624,6 +626,7 @@ class LiveChargingController extends ChangeNotifier {
         _consecutiveFailures = 0;
         _isNoActiveSession = false;
         _shouldPoll = true;
+        _pollingStoppedByNetwork = false;
 
         await _saveSessionData(data);
 
@@ -648,6 +651,7 @@ class LiveChargingController extends ChangeNotifier {
           if (_consecutiveFailures >= maxConsecutiveFailures) {
             print('⚠️ Max consecutive failures reached. Stopping polling.');
             _shouldPoll = false;
+            _pollingStoppedByNetwork = true;
             stopPolling();
           }
 
@@ -679,6 +683,7 @@ class LiveChargingController extends ChangeNotifier {
       if (_consecutiveFailures >= maxConsecutiveFailures) {
         print('⚠️ Max consecutive failures reached. Stopping polling.');
         _shouldPoll = false;
+        _pollingStoppedByNetwork = true;
         stopPolling();
       }
 
@@ -921,6 +926,7 @@ class LiveChargingController extends ChangeNotifier {
     _pollingAttempts = 0;
     _consecutiveFailures = 0;
     _shouldPoll = true;
+    _pollingStoppedByNetwork = false;
     _isInBackground = false;
 
     final pollInterval = interval ?? const Duration(seconds: 10);
@@ -980,6 +986,13 @@ class LiveChargingController extends ChangeNotifier {
     _pollingAttempts = 0;
     _consecutiveFailures = 0;
     _shouldPoll = false;
+  }
+
+  void resetNetworkFailures() {
+    _consecutiveFailures = 0;
+    _shouldPoll = true;
+    _pollingStoppedByNetwork = false;
+    _pollingAttempts = 0;
   }
 
   // ==================== APP LIFECYCLE ====================

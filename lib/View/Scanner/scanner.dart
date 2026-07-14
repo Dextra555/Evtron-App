@@ -3,7 +3,6 @@
 import 'package:evtron/Controller/scan_validation_controller.dart';
 import 'package:evtron/View/Scanner/vehiclelist.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -18,16 +17,6 @@ import '../Payment/paymentpage.dart';
 import '../Profile/profile.dart';
 import 'ChargingProgressPage.dart';
 import '../Home/mapui.dart';
-
-class UpperCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    return TextEditingValue(
-      text: newValue.text.toUpperCase(),
-      selection: newValue.selection,
-    );
-  }
-}
 
 class ScannerPage extends StatefulWidget {
   final Map<String, String>? chargerDetails;
@@ -1404,8 +1393,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
             child: TextField(
               controller: _connectorIdController,
               keyboardType: TextInputType.text,
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [UpperCaseTextFormatter()],
+              textCapitalization: TextCapitalization.none,
               style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
               decoration: InputDecoration(
                 hintText: "Enter Connector ID",

@@ -1,3 +1,5 @@
+// scanner_page.dart (Updated with proper vehicle fetching)
+import 'package:evtron/View/Home/vehiclelist.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -56,6 +58,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadVehicles(); // Load vehicles on init
 
     _scanAnimationController = AnimationController(
       vsync: this,
@@ -78,10 +81,41 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     });
   }
 
+  Future<void> _loadVehicles() async {
+    setState(() {
+      _isLoadingVehicles = true;
+    });
+    try {
+      final vehicleResponse = await _vehicleController.fetchVehicles();
+      if (mounted) {
+        if (vehicleResponse.status && vehicleResponse.data != null) {
+          setState(() {
+            _vehicles = vehicleResponse.data!;
+            _isLoadingVehicles = false;
+          });
+          print('✅ Loaded ${_vehicles.length} vehicles successfully');
+        } else {
+          setState(() {
+            _vehicles = [];
+            _isLoadingVehicles = false;
+          });
+          print('⚠️ Failed to load vehicles: ${vehicleResponse.message}');
+        }
+      }
+    } catch (e) {
+      print('❌ Error loading vehicles: $e');
+      if (mounted) {
+        setState(() {
+          _vehicles = [];
+          _isLoadingVehicles = false;
+        });
+      }
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Only reinitialize if coming back and controller is disposed
     if (_hasPermission && cameraController == null && mounted && !_isDisposing) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _initializeCamera();
@@ -92,7 +126,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   Future<void> _initializeCamera() async {
     if (_isDisposing || _isStartingCamera) return;
 
-    // Request camera permission
     final status = await Permission.camera.request();
 
     if (status.isGranted) {
@@ -102,22 +135,19 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
         });
       }
 
-      // Dispose existing controller if any
       await _disposeCameraController();
 
       if (!mounted) return;
 
-      // Create new controller with autoStart false to control manually
       cameraController = MobileScannerController(
         detectionSpeed: DetectionSpeed.noDuplicates,
         facing: CameraFacing.back,
         torchEnabled: false,
-        autoStart: false, // Important: Don't auto start
+        autoStart: false,
       );
 
       if (mounted) {
         setState(() {});
-        // Start camera after a short delay
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted && cameraController != null && !_isStartingCamera && !_isDisposing) {
             _startCamera();
@@ -135,9 +165,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   }
 
   Future<void> _startCamera() async {
-    // Prevent multiple start attempts
     if (_isStartingCamera || _isDisposing || !mounted || cameraController == null) {
-      print('⚠️ Cannot start camera: _isStartingCamera=$_isStartingCamera, _isDisposing=$_isDisposing, mounted=$mounted');
       return;
     }
 
@@ -152,7 +180,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
           _isInitialized = true;
           _isStartingCamera = false;
         });
-        print('✅ Camera started successfully');
       }
     } catch (e) {
       print('Error starting camera: $e');
@@ -161,7 +188,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
           _isInitialized = false;
           _isStartingCamera = false;
         });
-        // Don't retry automatically to avoid loops
       }
     }
   }
@@ -224,7 +250,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     }
   }
 
-  // Implement WidgetsBindingObserver method
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -261,7 +286,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     });
     _scanAnimationController.repeat(reverse: true);
 
-    // Restart camera if needed
     if (!_isInitialized && cameraController != null && mounted && !_isStartingCamera && !_isDisposing) {
       _startCamera();
     }
@@ -287,157 +311,79 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
 
     final String? code = capture.barcodes.first.rawValue;
     if (code != null) {
+      print('✅ QR Code Scanned: $code');
       setState(() {
         isScanning = false;
         scannedData = code;
       });
       _scanAnimationController.stop();
-      _stopCamera(); // Stop camera when scanning is done
+      _stopCamera();
 
-      // Auto-fill the connector ID
       _connectorIdController.text = code;
-      _validateConnectorId(); // Trigger validation
+      _validateConnectorId();
 
-      // Directly start charging without showing dialog
-      _startChargingDirectly(code);
+      _navigateToVehicleScreen(code);
     }
   }
 
-  void _showScannedDialog(String qrData) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(26)),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Appcolor.green, Appcolor.green.withOpacity(0.7)],
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.qr_code_scanner, color: Colors.white, size: 40),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  "Station Found!",
-                  style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Appcolor.green.withOpacity(0.1), Appcolor.green.withOpacity(0.05)],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Appcolor.green.withOpacity(0.3)),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        "Connector ID",
-                        style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade600, letterSpacing: 1),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        qrData,
-                        style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700, color: Appcolor.green),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _resetScanner();
-                        },
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.grey.shade300),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                        child: Text(
-                          "Scan Again",
-                          style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade700, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          // Auto-fill the connector ID and start charging
-                          _connectorIdController.text = qrData;
-                          _validateConnectorId(); // Trigger validation
-                          _startChargingDirectly(qrData);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Appcolor.green,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          elevation: 0,
-                        ),
-                        child: Text(
-                          "Start Charging",
-                          style: GoogleFonts.poppins(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    ).then((_) {
-      if (mounted && isScanning && !_isStartingCamera && !_isDisposing) {
-        _initializeCamera();
-      }
-    });
-  }
-
-  void _startChargingDirectly(String stationId) async {
-    print('\n╔══════════════════════════════════════════════════════════════╗');
-    print('║              DIRECT CHARGING START - USING QR DATA            ║');
-    print('╚══════════════════════════════════════════════════════════════╝');
-    print('\n📍 Scanned QR Data: $stationId');
-    print('🔌 Charger ID from input: ${_connectorIdController.text.trim()}');
-
-    String chargerId = _connectorIdController.text.trim();  // Keep as String, don't parse to int
-
-    if (chargerId.isEmpty) {
-      print('⚠️ No charger ID entered');
+  Future<void> _navigateToVehicleScreen(String chargerId) async {
+    // If vehicles are still loading, wait
+    if (_isLoadingVehicles) {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+      // Wait for vehicles to load
+      await Future.delayed(const Duration(milliseconds: 500));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Please enter charger ID first"),
-            backgroundColor: Colors.red,
-          ),
-        );
-        _resetScanner();
+        Navigator.pop(context); // Close loading dialog
       }
-      return;
     }
+
+    if (!mounted) return;
+
+    // Navigate to VehicleScreen with fetched vehicles
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VehicleScreen(
+          chargerId: chargerId,
+          vehicles: _vehicles,
+          chargerModel: _chargerModelController.text.isNotEmpty
+              ? _chargerModelController.text
+              : widget.chargerDetails?['chargerModel'] ?? 'Standard Charger',
+          chargerType: _selectedChargerType,
+        ),
+      ),
+    );
+
+    // If we got a result back (vehicle selected), start charging
+    if (result != null && result is Map<String, dynamic>) {
+      await _startChargingWithVehicle(chargerId, result);
+    } else {
+      // User cancelled, reset scanner
+      _resetScanner();
+    }
+  }
+
+  void _startChargingWithManualId() {
+    String chargerId = _connectorIdController.text.trim();
+    if (chargerId.isNotEmpty) {
+      print('🔌 Manual charger ID entered: $chargerId');
+      _navigateToVehicleScreen(chargerId);
+    }
+  }
+
+  Future<void> _startChargingWithVehicle(String chargerId, Map<String, dynamic> vehicleData) async {
+    print('\n╔══════════════════════════════════════════════════════════════╗');
+    print('║              STARTING CHARGING WITH VEHICLE                   ║');
+    print('╚══════════════════════════════════════════════════════════════╝');
+    print('\n📍 Charger ID: $chargerId');
+    print('🚗 Vehicle: ${vehicleData['vehicleName']}');
 
     // Show loading dialog
     showDialog(
@@ -465,7 +411,15 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  "Charger ID: $chargerId",  // Show the charger ID
+                  "Charger ID: $chargerId",
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Vehicle: ${vehicleData['vehicleName']}",
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     color: Colors.grey.shade600,
@@ -479,10 +433,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     );
 
     try {
-      // IMPORTANT: Pass the charger ID as String, don't convert to int
       final chargingController = ChargingController();
       final success = await chargingController.startChargingSession(
-        chargerId: chargerId,  // Pass directly as String
+        chargerId: chargerId,
       );
 
       if (mounted) {
@@ -490,29 +443,15 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
       }
 
       if (success && mounted) {
-        // Print the response data that will be passed to next page
-        print('\n📤 DATA PASSING TO CHARGING PROGRESS PAGE:');
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        print('Session ID: ${chargingController.currentSession?.data?.sessionId}');
-        print('Transaction ID: ${chargingController.currentSession?.data?.transactionId}');
-        print('Started At: ${chargingController.currentSession?.data?.startedAt}');
-        print('Charger: ${chargingController.currentSession?.data?.charger.name}');
-        print('Charger ID: ${chargingController.currentSession?.data?.charger.id}');  // This will show "Evt-0D76C0"
-        print('Connector: ${chargingController.currentSession?.data?.connector.name} (${chargingController.currentSession?.data?.connector.type})');
-        print('Station: ${chargingController.currentSession?.data?.station.name}');
-        print('Location: ${chargingController.currentSession?.data?.station.location.city}');
-        print('Cost: ${chargingController.currentSession?.data?.pricing.estimatedCostPerKwh} ${chargingController.currentSession?.data?.pricing.currency}/kWh');
-        print('User: ${chargingController.currentSession?.data?.user.name}');
-        print('Wallet Balance: ${chargingController.currentSession?.data?.user.walletBalance}');
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+        print('\n✅ Charging session started successfully!');
 
         Map<String, dynamic> chargingDetails = {
-          'stationId': chargerId,  // Now this is the actual charger ID string
-          'vehicleId': 'direct_charging',
-          'vehicleName': 'EV Vehicle',
-          'manufacturer': 'Electric Vehicle',
-          'model': 'EV Model',
-          'registrationNumber': 'EV-001',
+          'stationId': chargerId,
+          'vehicleId': vehicleData['vehicleId'],
+          'vehicleName': vehicleData['vehicleName'],
+          'manufacturer': vehicleData['manufacturer'],
+          'model': vehicleData['model'],
+          'registrationNumber': vehicleData['registrationNumber'],
           'chargerModel': _chargerModelController.text.isNotEmpty
               ? _chargerModelController.text
               : widget.chargerDetails?['chargerModel'] ?? 'Standard Charger',
@@ -527,10 +466,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
         };
 
         if (mounted) {
-          // Stop camera before navigating
           await _stopCamera();
-
-          // Navigate to charging progress page
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -541,243 +477,123 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
           );
         }
       } else if (mounted) {
-        // Show error dialog with the actual error message
-        String errorTitle = "Charging Failed";
-        IconData errorIcon = Icons.error_outline;
-        Color errorColor = Colors.red;
-
-        // Get detailed error message from controller
-        String errorMessage = chargingController.errorMessage ?? "Unknown error occurred";
-
-        // Parse specific error messages
-        if (errorMessage.contains("charger id is invalid") ||
-            errorMessage.contains("The selected charger id is invalid")) {
-          errorTitle = "Invalid Charger ID";
-          errorIcon = Icons.qr_code_scanner;
-          errorColor = Colors.orange;
-          errorMessage = "The charger ID '$chargerId' is invalid. Please check and try again.";
-        } else if (errorMessage.contains("already in use")) {
-          errorTitle = "Charger Unavailable";
-          errorIcon = Icons.ev_station;
-          errorColor = Colors.orange;
-          errorMessage = "This charger is currently in use. Please try another charger.";
-        } else if (errorMessage.contains("401") || errorMessage.contains("unauthorized")) {
-          errorTitle = "Session Expired";
-          errorIcon = Icons.lock_outline;
-          errorColor = Colors.red;
-          errorMessage = "Your session has expired. Please login again.";
-        }
-
-        // Show error dialog
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: errorColor.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        errorIcon,
-                        color: errorColor,
-                        size: 48,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      errorTitle,
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: errorColor.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: errorColor.withOpacity(0.2)),
-                      ),
-                      child: Text(
-                        errorMessage,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.black87,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _connectorIdController.clear();
-                              _resetScanner();
-                            },
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(color: Colors.grey.shade300),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: Text(
-                              "Scan Again",
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey.shade700,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _resetScanner();
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Appcolor.green,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: Text(
-                              "Try Again",
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ).then((_) {
-          if (mounted) {
-            _resetScanner();
-          }
-        });
+        String errorMessage = chargingController.errorMessage ?? "Failed to start charging";
+        _showErrorDialog(errorMessage);
       }
     } catch (e) {
       print('\n❌ EXCEPTION: $e');
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog if open
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+        Navigator.pop(context); // Close loading dialog
+        _showErrorDialog(e.toString());
+      }
+    }
+  }
+
+  void _showErrorDialog(String errorMessage) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.error_outline,
+                    color: Colors.red,
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  "Charging Failed",
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  errorMessage,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.error_outline,
-                        color: Colors.red,
-                        size: 48,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      "Error",
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      "Failed to start charging: ${e.toString()}",
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.black87,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _resetScanner();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Appcolor.green,
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _resetScanner();
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Colors.grey.shade300),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          "Try Again",
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                          ),
                         ),
                       ),
-                      child: Text(
-                        "Try Again",
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _resetScanner();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Appcolor.green,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          "Scan Again",
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            );
-          },
-        ).then((_) {
-          if (mounted) {
-            _resetScanner();
-          }
-        });
-      }
-    }
-  }
-
-  void _startChargingWithManualId() {
-    String chargerId = _connectorIdController.text.trim();
-    if (chargerId.isNotEmpty) {
-      print('🔌 Manual charger ID entered: $chargerId');
-      _startChargingDirectly(chargerId);  // Pass directly as String
-    }
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _onTabTapped(int index) async {
     if (index == _currentIndex) return;
 
-    // Stop camera before navigating
     await _stopCamera();
 
     Widget page;
@@ -894,7 +710,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
             controller: cameraController!,
             onDetect: _handleScan,
           ),
-
           // Gradient overlay
           Container(
             decoration: BoxDecoration(
@@ -911,7 +726,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
               ),
             ),
           ),
-
           // Scanner frame
           Positioned(
             top: MediaQuery.of(context).size.height * 0.15,
@@ -1007,8 +821,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
               ),
             ),
           ),
-
-          // Scanning animation line
           if (isScanning && _isInitialized)
             AnimatedBuilder(
               animation: _scanAnimation,
@@ -1029,8 +841,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                 );
               },
             ),
-
-          // Instruction chip
           Positioned(
             top: MediaQuery.of(context).size.height * 0.15 + 260,
             left: 0,
@@ -1057,8 +867,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
               ),
             ),
           ),
-
-          // Loading overlay when camera is starting
           if (_isStartingCamera && !_isInitialized)
             Container(
               color: Colors.black54,
@@ -1078,7 +886,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                 ),
               ),
             ),
-
           Positioned(
             bottom: 30,
             left: 16,
@@ -1164,5 +971,4 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     );
   }
 }
-
 

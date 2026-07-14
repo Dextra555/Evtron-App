@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../Theme/colors.dart';
 import '../../Controller/vehicle_controller.dart';
 import '../../Model/vehicle_model.dart';
-import '../Home/scanner.dart';
+import '../Scanner/scanner.dart';
 
 class MyVehiclesPage extends StatefulWidget {
   const MyVehiclesPage({super.key});

@@ -33,64 +33,211 @@ class PdfService {
     return null;
   }
 
-  static String _formatDateOnly(String dateTimeStr) {
+  static String _formatDateOnly(String? value) {
+    if (value == null || value.trim().isEmpty) return '-';
+
     try {
+      // Check if the date is in DD-MM-YYYY format
+      if (value.contains('-') && value.length >= 10) {
+        // Check if it's DD-MM-YYYY (first part is day, not year)
+        final parts = value.trim().split(' ');
+        final datePart = parts[0];
+        final dateComponents = datePart.split('-');
+
+        if (dateComponents.length == 3) {
+          // If first part is day (1-31), second is month (1-12), third is year (4 digits)
+          final day = int.tryParse(dateComponents[0]);
+          final month = int.tryParse(dateComponents[1]);
+          final year = int.tryParse(dateComponents[2]);
+
+          if (day != null && month != null && year != null && day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+            // This is DD-MM-YYYY format
+            return '${day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/$year';
+          }
+        }
+      }
+
+      // Try parsing as ISO format
+      final dt = DateTime.parse(value).toLocal();
+      return '${dt.day.toString().padLeft(2, '0')}/'
+          '${dt.month.toString().padLeft(2, '0')}/'
+          '${dt.year}';
+    } catch (e) {
+      // If parsing fails, try to extract date from DD-MM-YYYY format directly
+      try {
+        final trimmed = value.trim();
+        if (trimmed.contains(' ')) {
+          final datePart = trimmed.split(' ')[0];
+          final dateComponents = datePart.split('-');
+          if (dateComponents.length == 3) {
+            final day = dateComponents[0].padLeft(2, '0');
+            final month = dateComponents[1].padLeft(2, '0');
+            final year = dateComponents[2];
+            return '$day/$month/$year';
+          }
+        }
+      } catch (_) {}
+      return value;
+    }
+  }
+
+  static String _formatFullDateTime(String dateTimeStr) {
+    try {
+      // Check if it's in DD-MM-YYYY format with time
+      if (dateTimeStr.contains('-') && dateTimeStr.contains(' ')) {
+        final parts = dateTimeStr.trim().split(' ');
+        if (parts.length >= 2) {
+          final datePart = parts[0];
+          final timePart = parts[1];
+          final dateComponents = datePart.split('-');
+
+          if (dateComponents.length == 3) {
+            final day = int.tryParse(dateComponents[0]);
+            final month = int.tryParse(dateComponents[1]);
+            final year = int.tryParse(dateComponents[2]);
+
+            if (day != null && month != null && year != null &&
+                day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+              // Parse time and convert to 12-hour format with AM/PM
+              final timeComponents = timePart.split(':');
+              if (timeComponents.length >= 2) {
+                int hour = int.parse(timeComponents[0]);
+                int minute = int.parse(timeComponents[1]);
+                String ampm = hour >= 12 ? 'PM' : 'AM';
+
+                // Convert to 12-hour format
+                if (hour > 12) {
+                  hour = hour - 12;
+                } else if (hour == 0) {
+                  hour = 12;
+                }
+
+                final timeFormatted = '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $ampm';
+                return '${day.toString().padLeft(2, '0')}/'
+                    '${month.toString().padLeft(2, '0')}/'
+                    '$year $timeFormatted';
+              }
+            }
+          }
+        }
+      }
+
+      // Try ISO format
       final dateTime = DateTime.parse(dateTimeStr);
       final localTime = dateTime.toLocal();
+      int hour = localTime.hour;
+      int minute = localTime.minute;
+      String ampm = hour >= 12 ? 'PM' : 'AM';
 
-      return '${localTime.year}-'
-          '${localTime.month.toString().padLeft(2, '0')}-'
-          '${localTime.day.toString().padLeft(2, '0')}';
-    } catch (e) {
-      try {
-        if (dateTimeStr.contains('T')) {
-          final parts = dateTimeStr.split('T');
-          return parts[0];
-        }
-        return dateTimeStr;
-      } catch (_) {
-        return dateTimeStr;
+      if (hour > 12) {
+        hour = hour - 12;
+      } else if (hour == 0) {
+        hour = 12;
       }
+
+      return '${localTime.day.toString().padLeft(2, '0')}/'
+          '${localTime.month.toString().padLeft(2, '0')}/'
+          '${localTime.year} '
+          '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $ampm';
+    } catch (e) {
+      // Fallback: try to extract from DD-MM-YYYY format
+      try {
+        final trimmed = dateTimeStr.trim();
+        if (trimmed.contains(' ')) {
+          final parts = trimmed.split(' ');
+          final datePart = parts[0];
+          final timePart = parts.length > 1 ? parts[1] : '';
+          final dateComponents = datePart.split('-');
+          if (dateComponents.length == 3) {
+            final day = dateComponents[0].padLeft(2, '0');
+            final month = dateComponents[1].padLeft(2, '0');
+            final year = dateComponents[2];
+
+            // Try to format time
+            if (timePart.isNotEmpty) {
+              final timeComponents = timePart.split(':');
+              if (timeComponents.length >= 2) {
+                int hour = int.parse(timeComponents[0]);
+                int minute = int.parse(timeComponents[1]);
+                String ampm = hour >= 12 ? 'PM' : 'AM';
+
+                if (hour > 12) {
+                  hour = hour - 12;
+                } else if (hour == 0) {
+                  hour = 12;
+                }
+
+                return '$day/$month/$year ${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $ampm';
+              }
+            }
+            return '$day/$month/$year $timePart';
+          }
+        }
+      } catch (_) {}
+      return dateTimeStr;
     }
   }
 
   static String _formatDateTimeString(String dateTimeStr) {
     try {
-      final dateTime = DateTime.parse(dateTimeStr);
-      final localTime = dateTime.toLocal();
-
-      return '${localTime.year}-'
-          '${localTime.month.toString().padLeft(2, '0')}-'
-          '${localTime.day.toString().padLeft(2, '0')}, '
-          '${localTime.hour.toString().padLeft(2, '0')}:'
-          '${localTime.minute.toString().padLeft(2, '0')}';
-    } catch (e) {
-      try {
-        if (dateTimeStr.contains('T')) {
-          final parts = dateTimeStr.split('T');
+      // Check if it's in DD-MM-YYYY format with time
+      if (dateTimeStr.contains('-') && dateTimeStr.contains(' ')) {
+        final parts = dateTimeStr.trim().split(' ');
+        if (parts.length >= 2) {
           final datePart = parts[0];
-          String timePart = '';
-          if (parts.length > 1) {
-            String timeWithZone = parts[1];
-            if (timeWithZone.contains('.')) {
-              timeWithZone = timeWithZone.substring(0, timeWithZone.indexOf('.'));
-            }
-            if (timeWithZone.contains('+')) {
-              timeWithZone = timeWithZone.substring(0, timeWithZone.indexOf('+'));
-            }
-            if (timeWithZone.contains('-')) {
-              timeWithZone = timeWithZone.substring(0, timeWithZone.indexOf('-'));
-            }
-            if (timeWithZone.length >= 5) {
-              timePart = ', ${timeWithZone.substring(0, 5)}';
+          final timePart = parts[1];
+          final dateComponents = datePart.split('-');
+
+          if (dateComponents.length == 3) {
+            final day = int.tryParse(dateComponents[0]);
+            final month = int.tryParse(dateComponents[1]);
+            final year = int.tryParse(dateComponents[2]);
+
+            if (day != null && month != null && year != null &&
+                day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+              // Parse time and convert to 12-hour format with AM/PM
+              final timeComponents = timePart.split(':');
+              if (timeComponents.length >= 2) {
+                int hour = int.parse(timeComponents[0]);
+                int minute = int.parse(timeComponents[1]);
+                String ampm = hour >= 12 ? 'PM' : 'AM';
+
+                // Convert to 12-hour format
+                if (hour > 12) {
+                  hour = hour - 12;
+                } else if (hour == 0) {
+                  hour = 12;
+                }
+
+                return '${day.toString().padLeft(2, '0')}/'
+                    '${month.toString().padLeft(2, '0')}/'
+                    '$year, ${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $ampm';
+              }
             }
           }
-          return datePart + timePart;
         }
-        return dateTimeStr;
-      } catch (_) {
-        return dateTimeStr;
       }
+
+      // Try ISO format
+      final dateTime = DateTime.parse(dateTimeStr);
+      final localTime = dateTime.toLocal();
+      int hour = localTime.hour;
+      int minute = localTime.minute;
+      String ampm = hour >= 12 ? 'PM' : 'AM';
+
+      if (hour > 12) {
+        hour = hour - 12;
+      } else if (hour == 0) {
+        hour = 12;
+      }
+
+      return '${localTime.day.toString().padLeft(2, '0')}/'
+          '${localTime.month.toString().padLeft(2, '0')}/'
+          '${localTime.year}, '
+          '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $ampm';
+    } catch (e) {
+      // Fallback
+      return dateTimeStr;
     }
   }
 
@@ -372,20 +519,17 @@ class PdfService {
                             flex: 2,
                             alignment: pw.Alignment.center,
                           ),
-                          // CHARGED ON field with date and time on separate lines
-                          _buildTableDataCellWithTwoLines(
-                            _formatDateOnly(invoiceData.session.startTime),
-                            _formatTime(invoiceData.session.startTime),
+                          _buildTableDataCellWithoutDivider(
+                            _formatFullDateTime(invoiceData.session.startTime), // Shows: 13/07/2026 12:23 PM
                             flex: 3,
                             alignment: pw.Alignment.center,
                           ),
-                          // DURATION with HH:MM:SS format
+                          // MODIFIED: DURATION in HH:MM:SS format
                           _buildTableDataCellWithoutDivider(
-                            _formatDurationHHMMSS(invoiceData.session.durationMinutes),
+                            '${_formatDurationHHMMSS(invoiceData.session.durationMinutes)} \n (hh:mm:ss)',
                             flex: 4,
                             alignment: pw.Alignment.center,
                           ),
-                          // Amount centered
                           _buildTableDataCellWithoutDivider(
                             '${invoiceData.costBreakdown.energyCost.toStringAsFixed(2)}',
                             flex: 3,
@@ -395,7 +539,6 @@ class PdfService {
                       ),
                     ),
 
-                    // SESSION FEE ROW
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 0),
                       child: pw.Row(
@@ -549,7 +692,7 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                '${invoiceData.billing.total.toStringAsFixed(2)}',
+                                '${invoiceData.billing.total.toStringAsFixed(2)}', // Shows as integer (no decimal places)
                                 style: pw.TextStyle(
                                   fontSize: 9,
                                   fontWeight: pw.FontWeight.bold,
@@ -616,6 +759,20 @@ class PdfService {
     final hours = minutes ~/ 60;
     final mins = minutes % 60;
     return '${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}:00';
+  }
+
+  static String _formatTimeWithSeconds(String? value) {
+    if (value == null || value.trim().isEmpty) return '-';
+
+    try {
+      final dt = DateTime.parse(value).toLocal();
+
+      return '${dt.hour.toString().padLeft(2, '0')}:'
+          '${dt.minute.toString().padLeft(2, '0')}:'
+          '${dt.second.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return value;
+    }
   }
 
   static pw.Widget _buildTableDataCellWithTwoLines(
@@ -723,6 +880,8 @@ class PdfService {
   }
 
   static String _numberToWords(double number) {
+    if (number == 0) return 'Zero Rupees Only';
+
     final parts = number.toStringAsFixed(2).split('.');
     final whole = int.parse(parts[0]);
     final decimal = int.parse(parts[1]);
@@ -745,21 +904,60 @@ class PdfService {
       return remainder == 0 ? '$hundred Hundred' : '$hundred Hundred and ${convertHundreds(remainder)}';
     }
 
+    String convertThousands(int num) {
+      if (num == 0) return '';
+
+      // Handle lakhs (100,000) and crores (10,000,000) for Indian number system
+      final crore = num ~/ 10000000;
+      final lakh = (num % 10000000) ~/ 100000;
+      final thousand = (num % 100000) ~/ 1000;
+      final remainder = num % 1000;
+
+      String result = '';
+
+      if (crore > 0) {
+        result += '${convertHundreds(crore)} Crore ';
+      }
+      if (lakh > 0) {
+        result += '${convertHundreds(lakh)} Lakh ';
+      }
+      if (thousand > 0) {
+        result += '${convertHundreds(thousand)} Thousand ';
+      }
+      if (remainder > 0) {
+        result += convertHundreds(remainder);
+      }
+
+      return result.trim();
+    }
+
     String result = '';
     if (whole >= 1000) {
-      final thousands = whole ~/ 1000;
-      final remainder = whole % 1000;
-      result = '${convertHundreds(thousands)} Thousand';
-      if (remainder > 0) {
-        result += ' ${convertHundreds(remainder)}';
-      }
+      result = convertThousands(whole);
     } else {
       result = convertHundreds(whole);
     }
 
-    return '${result} Rupees And ${decimal.toString().padLeft(2, '0')} Paise Only';
-  }
+    // Handle decimal/paise
+    String paiseWords = '';
+    if (decimal > 0) {
+      if (decimal < 20) {
+        paiseWords = units[decimal];
+      } else {
+        final ten = tens[decimal ~/ 10];
+        final unit = decimal % 10;
+        paiseWords = unit == 0 ? ten : '$ten ${units[unit]}';
+      }
+    }
 
+    String totalWords = '${result.trim()} Rupees';
+    if (paiseWords.isNotEmpty) {
+      totalWords += ' And ${paiseWords} Paise';
+    }
+    totalWords += ' Only';
+
+    return totalWords;
+  }
   static Future<void> openPdf(String filePath) async {
     await OpenFile.open(filePath);
   }

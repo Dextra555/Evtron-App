@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:http/http.dart';
 import '../../Model/ev_station_model.dart';
+import '../../Service/WishlistService.dart';
 import '../../Theme/colors.dart';
+import '../../Controller/wishlist_controller.dart';
 
-class StationDetailsSheet extends StatelessWidget {
+class StationDetailsSheet extends StatefulWidget {
   final EVStation station;
   final double distance;
   final bool isFavorite;
-  final VoidCallback onFavoriteToggle;
+  final Future<void> Function() onFavoriteToggle;
   final VoidCallback onNavigate;
 
   const StationDetailsSheet({
@@ -18,14 +22,137 @@ class StationDetailsSheet extends StatelessWidget {
     required this.onNavigate,
   });
 
+  @override
+  State<StationDetailsSheet> createState() => _StationDetailsSheetState();
+}
+
+class _StationDetailsSheetState extends State<StationDetailsSheet> {
+  late bool _isFavorite;
+  late WishlistController _wishlistController;
+  final WishlistService _wishlistService = WishlistService();
+
+  @override
+  void initState() {
+    super.initState();
+    _wishlistController = context.read<WishlistController>();
+    _isFavorite = widget.isFavorite;
+
+    // If controller already has data, check if station is in wishlist
+    if (_wishlistController.wishlist.isNotEmpty) {
+      _checkIfFavorite();
+    }
+  }
+
+  @override
+  void didUpdateWidget(StationDetailsSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isFavorite != widget.isFavorite) {
+      _isFavorite = widget.isFavorite;
+    }
+  }
+
+  void _checkIfFavorite() {
+    setState(() {
+      _isFavorite = _wishlistController.isStationInWishlist(widget.station.id);
+    });
+  }
+
+  Future<void> _toggleFavorite() async {
+    // Store previous state for rollback if needed
+    final bool previousState = _isFavorite;
+
+    // Update UI immediately
+    setState(() {
+      _isFavorite = !_isFavorite;
+    });
+
+    // Call the parent callback to update parent state
+    await widget.onFavoriteToggle();
+
+    try {
+      if (_isFavorite) {
+        // Add to wishlist
+        final success = await _wishlistService.addToWishlist(
+          chargingStationId: widget.station.id,
+          isFavorite: true,
+          notes: '',
+        );
+
+        if (success && mounted) {
+          // Refresh wishlist to sync
+          await _wishlistController.refreshWishlist();
+          _showSnackbar('Added to wishlist', Appcolor.green);
+        } else {
+          // Rollback on failure
+          if (mounted) {
+            setState(() {
+              _isFavorite = previousState;
+            });
+            _showSnackbar('Failed to add to wishlist', Colors.orange);
+          }
+        }
+      } else {
+        // Remove from wishlist
+        final wishlistId = _wishlistController.getWishlistIdForStation(widget.station.id);
+
+        if (wishlistId != null) {
+          final success = await _wishlistController.removeFromWishlist(wishlistId);
+
+          if (success && mounted) {
+            // Refresh wishlist to sync
+            await _wishlistController.refreshWishlist();
+            _showSnackbar('Removed from wishlist', Colors.red);
+          } else {
+            // Rollback on failure
+            if (mounted) {
+              setState(() {
+                _isFavorite = previousState;
+              });
+              _showSnackbar('Failed to remove from wishlist', Colors.orange);
+            }
+          }
+        } else {
+          // Rollback if wishlist ID not found
+          if (mounted) {
+            setState(() {
+              _isFavorite = previousState;
+            });
+            _showSnackbar('Wishlist item not found', Colors.orange);
+          }
+        }
+      }
+    } catch (e) {
+      // Rollback on error
+      if (mounted) {
+        setState(() {
+          _isFavorite = previousState;
+        });
+        _showSnackbar('Error: ${e.toString()}', Colors.red);
+      }
+      print('Error toggling favorite: $e');
+    }
+  }
+
+  void _showSnackbar(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   String _formatDistance() {
-    return distance < 1
-        ? "${(distance * 1000).toInt()} m"
-        : "${distance.toStringAsFixed(1)} km";
+    return widget.distance < 1
+        ? "${(widget.distance * 1000).toInt()} m"
+        : "${widget.distance.toStringAsFixed(1)} km";
   }
 
   String _getTravelTime() {
-    int minutes = (distance / 40 * 60).round();
+    int minutes = (widget.distance / 40 * 60).round();
 
     if (minutes < 60) return "$minutes min";
 
@@ -35,46 +162,39 @@ class StationDetailsSheet extends StatelessWidget {
     return "${hours}h${remainingMinutes > 0 ? ' $remainingMinutes min' : ''}";
   }
 
-  // ✅ Get the station status dynamically from connector ports
   String _getStationStatus() {
-    if (station.connectorPorts.isEmpty) {
+    if (widget.station.connectorPorts.isEmpty) {
       return 'No connectors available';
     }
 
-    // Check for available ports
-    final hasAvailable = station.connectorPorts.any(
+    final hasAvailable = widget.station.connectorPorts.any(
             (port) => port.status.toLowerCase() == 'available'
     );
 
-    // Check for fault/offline ports
-    final hasFault = station.connectorPorts.any(
+    final hasFault = widget.station.connectorPorts.any(
             (port) => port.status.toLowerCase() == 'fault' ||
             port.status.toLowerCase() == 'error'
     );
 
-    final hasOffline = station.connectorPorts.any(
+    final hasOffline = widget.station.connectorPorts.any(
             (port) => port.status.toLowerCase() == 'offline'
     );
 
-    // Check for active/busy ports
-    final hasActive = station.connectorPorts.any(
+    final hasActive = widget.station.connectorPorts.any(
             (port) => port.status.toLowerCase() == 'active' ||
             port.status.toLowerCase() == 'busy' ||
             port.status.toLowerCase() == 'charging'
     );
 
-    // Determine status
     if (hasAvailable) {
-      // Count available ports
-      final availableCount = station.connectorPorts
+      final availableCount = widget.station.connectorPorts
           .where((port) => port.status.toLowerCase() == 'available')
           .length;
       return 'Available · $availableCount charger${availableCount > 1 ? 's' : ''} free';
     } else if (hasFault || hasOffline) {
       return '⚠️ Maintenance required';
     } else if (hasActive) {
-      // Count active/busy ports
-      final activeCount = station.connectorPorts
+      final activeCount = widget.station.connectorPorts
           .where((port) => port.status.toLowerCase() == 'active' ||
           port.status.toLowerCase() == 'busy' ||
           port.status.toLowerCase() == 'charging')
@@ -85,22 +205,21 @@ class StationDetailsSheet extends StatelessWidget {
     }
   }
 
-  // ✅ Get status color dynamically
   Color _getStatusColor() {
-    if (station.connectorPorts.isEmpty) {
+    if (widget.station.connectorPorts.isEmpty) {
       return Colors.grey;
     }
 
-    final hasAvailable = station.connectorPorts.any(
+    final hasAvailable = widget.station.connectorPorts.any(
             (port) => port.status.toLowerCase() == 'available'
     );
 
-    final hasFault = station.connectorPorts.any(
+    final hasFault = widget.station.connectorPorts.any(
             (port) => port.status.toLowerCase() == 'fault' ||
             port.status.toLowerCase() == 'error'
     );
 
-    final hasOffline = station.connectorPorts.any(
+    final hasOffline = widget.station.connectorPorts.any(
             (port) => port.status.toLowerCase() == 'offline'
     );
 
@@ -113,19 +232,16 @@ class StationDetailsSheet extends StatelessWidget {
     }
   }
 
-  // ✅ Get available chargers count dynamically
   int _getAvailableCount() {
-    return station.connectorPorts
+    return widget.station.connectorPorts
         .where((port) => port.status.toLowerCase() == 'available')
         .length;
   }
 
-  // ✅ Get total connector ports
   int _getTotalCount() {
-    return station.connectorPorts.length;
+    return widget.station.connectorPorts.length;
   }
 
-  // ✅ Get status message for each connector
   String _getConnectorStatusText(String status) {
     switch (status.toLowerCase()) {
       case 'available':
@@ -146,7 +262,6 @@ class StationDetailsSheet extends StatelessWidget {
     }
   }
 
-  // ✅ Get status color for each connector
   Color _getConnectorStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'available':
@@ -165,23 +280,18 @@ class StationDetailsSheet extends StatelessWidget {
     }
   }
 
-  // ✅ Helper method to clean and format price in Indian Rupees
   String _getFormattedPrice() {
-    if (station.estimatedChargingPrice > 0) {
-      // Clean the price string to remove any currency symbols
-      String priceStr = station.estimatedChargingPrice.toString();
-      // Remove any non-numeric characters except decimal point
+    if (widget.station.estimatedChargingPrice > 0) {
+      String priceStr = widget.station.estimatedChargingPrice.toString();
       priceStr = priceStr.replaceAll(RegExp(r'[^0-9.]'), '');
       double cleanPrice = double.tryParse(priceStr) ?? 0.0;
       if (cleanPrice > 0) {
-        // Format with ₹ symbol and 2 decimal places
         return '₹${cleanPrice.toStringAsFixed(2)}';
       }
     }
     return '₹0.00';
   }
 
-  // ✅ Get icon for amenity
   IconData _getAmenityIcon(String amenity) {
     switch (amenity.toLowerCase()) {
       case 'wifi':
@@ -212,7 +322,6 @@ class StationDetailsSheet extends StatelessWidget {
     }
   }
 
-  // ✅ Get formatted amenity name
   String _getFormattedAmenityName(String amenity) {
     return amenity
         .replaceAll('_', ' ')
@@ -227,10 +336,8 @@ class StationDetailsSheet extends StatelessWidget {
 
     final bgColor = isDark ? const Color(0xFF1A1A2E) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final subtitleColor =
-    isDark ? Colors.grey.shade400 : Colors.grey.shade600;
-    final cardColor =
-    isDark ? const Color(0xFF2D2D44) : const Color(0xFFF5F7FA);
+    final subtitleColor = isDark ? Colors.grey.shade400 : Colors.grey.shade600;
+    final cardColor = isDark ? const Color(0xFF2D2D44) : const Color(0xFFF5F7FA);
 
     final statusText = _getStationStatus();
     final statusColor = _getStatusColor();
@@ -291,7 +398,7 @@ class StationDetailsSheet extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              station.name,
+                              widget.station.name,
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600,
@@ -311,7 +418,7 @@ class StationDetailsSheet extends StatelessWidget {
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
-                                    station.fullAddress,
+                                    widget.station.fullAddress,
                                     style: TextStyle(
                                       fontSize: 13,
                                       color: subtitleColor,
@@ -326,22 +433,26 @@ class StationDetailsSheet extends StatelessWidget {
                         ),
                       ),
 
+                      // Favorite Button - No loading indicator
                       IconButton(
-                        onPressed: onFavoriteToggle,
+                        onPressed: _toggleFavorite,
                         icon: Icon(
-                          isFavorite ? Icons.favorite : Icons.favorite_border,
-                          color: isFavorite ? Colors.red : subtitleColor,
+                          _isFavorite ? Icons.favorite : Icons.favorite_border,
+                          color: _isFavorite ? Colors.red : subtitleColor,
                         ),
+                        tooltip: _isFavorite ? 'Remove from wishlist' : 'Add to wishlist',
                       ),
                     ],
                   ),
 
                   const SizedBox(height: 20),
 
-                  /// STATUS CARD - ✅ DYNAMIC
+                  /// STATUS CARD
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                        horizontal: 16,
+                        vertical: 12
+                    ),
                     decoration: BoxDecoration(
                       color: statusColor.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(12),
@@ -357,7 +468,6 @@ class StationDetailsSheet extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 10),
-
                         Expanded(
                           child: Text(
                             statusText,
@@ -368,7 +478,6 @@ class StationDetailsSheet extends StatelessWidget {
                             ),
                           ),
                         ),
-
                         Text(
                           totalCount > 0 ? '$availableCount/$totalCount' : '0/0',
                           style: TextStyle(
@@ -383,7 +492,7 @@ class StationDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  /// QUICK INFO - ✅ UPDATED with formatted price
+                  /// QUICK INFO
                   Row(
                     children: [
                       Expanded(
@@ -407,7 +516,7 @@ class StationDetailsSheet extends StatelessWidget {
                       Expanded(
                         child: _infoItem(
                           Icons.currency_rupee,
-                          _getFormattedPrice(), // ✅ Using formatted price attach_money
+                          _getFormattedPrice(),
                           'Per kWh',
                           isDark,
                         ),
@@ -417,6 +526,7 @@ class StationDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
+                  /// DETAILS CARD
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -428,7 +538,7 @@ class StationDetailsSheet extends StatelessWidget {
                         _detailRow(
                           Icons.flash_on,
                           'Total Connectors',
-                          '${station.connectorPorts.length} ports',
+                          '${widget.station.connectorPorts.length} ports',
                           textColor,
                           subtitleColor,
                         ),
@@ -436,7 +546,7 @@ class StationDetailsSheet extends StatelessWidget {
                         _detailRow(
                           Icons.access_time,
                           'Operation',
-                          station.is247 ? '24/7' : 'Limited',
+                          widget.station.is247 ? '24/7' : 'Limited',
                           textColor,
                           subtitleColor,
                         ),
@@ -444,7 +554,7 @@ class StationDetailsSheet extends StatelessWidget {
                         _detailRow(
                           Icons.ev_station,
                           'Station Type',
-                          station.stationType.toUpperCase(),
+                          widget.station.stationType.toUpperCase(),
                           textColor,
                           subtitleColor,
                         ),
@@ -452,8 +562,8 @@ class StationDetailsSheet extends StatelessWidget {
                         _detailRow(
                           Icons.star,
                           'Rating',
-                          station.rating != null
-                              ? '${station.rating!.toStringAsFixed(1)} / 5'
+                          widget.station.rating != null
+                              ? '${widget.station.rating!.toStringAsFixed(1)} / 5'
                               : 'Not rated',
                           textColor,
                           subtitleColor,
@@ -465,7 +575,8 @@ class StationDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  if (station.connectorPorts.isNotEmpty) ...[
+                  /// CONNECTORS SECTION
+                  if (widget.station.connectorPorts.isNotEmpty) ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -478,7 +589,7 @@ class StationDetailsSheet extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '${station.connectorPorts.length} available',
+                          '${widget.station.connectorPorts.length} available',
                           style: TextStyle(
                             fontSize: 12,
                             color: subtitleColor,
@@ -491,7 +602,7 @@ class StationDetailsSheet extends StatelessWidget {
                     Wrap(
                       spacing: 10,
                       runSpacing: 10,
-                      children: station.connectorPorts.map((port) {
+                      children: widget.station.connectorPorts.map((port) {
                         final statusColor = _getConnectorStatusColor(port.status);
                         final statusText = _getConnectorStatusText(port.status);
 
@@ -528,7 +639,9 @@ class StationDetailsSheet extends StatelessWidget {
                                   const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
-                                      port.chargerId.isNotEmpty ? 'Charger ID: ${port.chargerId}' : 'Charger ID: N/A',
+                                      port.chargerId.isNotEmpty
+                                          ? 'Charger ID: ${port.chargerId}'
+                                          : 'Charger ID: N/A',
                                       style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w700,
@@ -561,7 +674,10 @@ class StationDetailsSheet extends StatelessWidget {
                                     ),
                                   ),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4
+                                    ),
                                     decoration: BoxDecoration(
                                       color: statusColor.withOpacity(0.12),
                                       borderRadius: BorderRadius.circular(999),
@@ -607,7 +723,8 @@ class StationDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  if (station.amenities.isNotEmpty) ...[
+                  /// AMENITIES SECTION
+                  if (widget.station.amenities.isNotEmpty) ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -620,7 +737,7 @@ class StationDetailsSheet extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '${station.amenities.length} available',
+                          '${widget.station.amenities.length} available',
                           style: TextStyle(
                             fontSize: 12,
                             color: subtitleColor,
@@ -633,10 +750,12 @@ class StationDetailsSheet extends StatelessWidget {
                     Wrap(
                       spacing: 12,
                       runSpacing: 12,
-                      children: station.amenities.map((amenity) {
+                      children: widget.station.amenities.map((amenity) {
                         return Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                              horizontal: 12,
+                              vertical: 10
+                          ),
                           decoration: BoxDecoration(
                             color: cardColor,
                             borderRadius: BorderRadius.circular(12),
@@ -671,6 +790,7 @@ class StationDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
+                  /// ACTION BUTTONS
                   Row(
                     children: [
                       Expanded(
@@ -695,15 +815,13 @@ class StationDetailsSheet extends StatelessWidget {
                           ),
                         ),
                       ),
-
                       const SizedBox(width: 12),
-
                       Expanded(
                         flex: 2,
                         child: ElevatedButton.icon(
                           onPressed: () {
                             Navigator.pop(context);
-                            onNavigate();
+                            widget.onNavigate();
                           },
                           icon: const Icon(Icons.directions_car),
                           label: const Text('Navigate'),
@@ -719,7 +837,6 @@ class StationDetailsSheet extends StatelessWidget {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 10),
                 ],
               ),
@@ -804,3 +921,4 @@ class StationDetailsSheet extends StatelessWidget {
     );
   }
 }
+

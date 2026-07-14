@@ -6,10 +6,24 @@ import '../Model/wishlist.dart';
 import '../Service/api_endpoints.dart';
 
 class WishlistController extends ChangeNotifier {
-
   bool isLoading = false;
   List<WishlistItem> wishlist = [];
   String errorMessage = '';
+
+  // Add method to check if a station is in wishlist
+  bool isStationInWishlist(int stationId) {
+    return wishlist.any((item) => item.station.id == stationId);
+  }
+
+  // Add method to get wishlist ID for a station
+  int? getWishlistIdForStation(int stationId) {
+    try {
+      final item = wishlist.firstWhere((item) => item.station.id == stationId);
+      return item.wishlistId;
+    } catch (e) {
+      return null;
+    }
+  }
 
   Future<void> fetchWishlist() async {
     try {
@@ -21,7 +35,6 @@ class WishlistController extends ChangeNotifier {
       String? token = prefs.getString('access_token');
       String? tokenType = prefs.getString('token_type');
 
-      // Check if token exists
       if (token == null) {
         errorMessage = "Please login to view wishlist";
         isLoading = false;
@@ -66,7 +79,6 @@ class WishlistController extends ChangeNotifier {
       print('========== REMOVE FROM WISHLIST ==========');
       print('Wishlist ID: $wishlistId');
 
-      // Get authentication token
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('access_token');
       String? tokenType = prefs.getString('token_type');
@@ -74,7 +86,6 @@ class WishlistController extends ChangeNotifier {
       print('Token exists: ${token != null}');
       print('Token Type: $tokenType');
 
-      // Check if token exists
       if (token == null) {
         print('❌ No token found - User not logged in');
         errorMessage = "Please login to remove from wishlist";
@@ -82,7 +93,6 @@ class WishlistController extends ChangeNotifier {
         return false;
       }
 
-      // Make DELETE request with authentication headers
       final response = await http.delete(
         Uri.parse(ApiEndpoints.removeWishlist(wishlistId)),
         headers: {
@@ -95,13 +105,10 @@ class WishlistController extends ChangeNotifier {
       print('Response Status Code: ${response.statusCode}');
       print('Response Body: ${response.body}');
 
-      // Parse response
       final data = jsonDecode(response.body);
       print('Parsed Response: $data');
 
-      // Check if deletion was successful
       if (response.statusCode == 200 && data['success'] == true) {
-        // Remove from local list
         wishlist.removeWhere((item) => item.wishlistId == wishlistId);
         notifyListeners();
         print('✅ Successfully removed from wishlist');
@@ -112,7 +119,6 @@ class WishlistController extends ChangeNotifier {
         notifyListeners();
         return false;
       }
-
     } catch (e) {
       print('❌ Error removing from wishlist: $e');
       print('Stack trace: ${StackTrace.current}');
@@ -122,14 +128,59 @@ class WishlistController extends ChangeNotifier {
     }
   }
 
-  // Add this method to clear error message
+  // Add method to add to wishlist
+  Future<bool> addToWishlist(int stationId, {String notes = ''}) async {
+    try {
+      print('========== ADD TO WISHLIST ==========');
+      print('Station ID: $stationId');
+
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('access_token');
+      String? tokenType = prefs.getString('token_type');
+
+      if (token == null) {
+        errorMessage = "Please login to add to wishlist";
+        notifyListeners();
+        return false;
+      }
+
+      final response = await http.post(
+        Uri.parse(ApiEndpoints.wishlist),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': '${tokenType ?? "Bearer"} $token',
+        },
+        body: jsonEncode({
+          'charging_station_id': stationId,
+          'notes': notes,
+        }),
+      );
+
+      print('Response Status: ${response.statusCode}');
+      print('Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          await fetchWishlist(); // Refresh the list
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      print('Error adding to wishlist: $e');
+      return false;
+    }
+  }
+
   void clearError() {
     errorMessage = '';
     notifyListeners();
   }
 
-  // Add this method to refresh wishlist
   Future<void> refreshWishlist() async {
     await fetchWishlist();
   }
 }
+

@@ -5,8 +5,6 @@ import '../../Model/ev_station_model.dart';
 import '../../Service/api_endpoints.dart';
 
 class WishlistService {
-
-
   Future<void> refreshWishlist(Function(Set<int>) onUpdate) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -25,7 +23,9 @@ class WishlistService {
 
       if (response.statusCode == 200) {
         final jsonData = jsonDecode(response.body);
-        final wishlistData = jsonData['data'] != null ? jsonData['data'] : (jsonData is List ? jsonData : []);
+        final wishlistData = jsonData['data'] != null
+            ? jsonData['data']
+            : (jsonData is List ? jsonData : []);
 
         final favoriteIds = <int>{};
         for (var item in wishlistData) {
@@ -48,8 +48,7 @@ class WishlistService {
     required int chargingStationId,
     required bool isFavorite,
     String notes = '',
-  }) async
-  {
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('access_token');
@@ -83,7 +82,11 @@ class WishlistService {
         print('Add to Wishlist Response: ${response.statusCode}');
         print('Response Body: ${response.body}');
 
-        return response.statusCode == 200 || response.statusCode == 201;
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final data = jsonDecode(response.body);
+          return data['success'] ?? true;
+        }
+        return false;
       } else {
         final wishlistId = await _getWishlistIdForStation(chargingStationId);
 
@@ -103,27 +106,17 @@ class WishlistService {
         print('Remove from Wishlist Response: ${response.statusCode}');
         print('Response Body: ${response.body}');
 
-        final data = jsonDecode(response.body);
-
-        if (response.statusCode == 200 &&
-            data['success'] == true) {
-
-          print(data['message']);
-
-          return true;
-        } else {
-
-          print('Failed to remove from wishlist');
-
-          return false;
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          return data['success'] == true;
         }
+        return false;
       }
     } catch (e) {
       print('❌ Error in addToWishlist: $e');
       return false;
     }
   }
-
 
   Future<bool> toggleFavorite(EVStation station, bool addToWishlist) async {
     try {
@@ -142,7 +135,11 @@ class WishlistService {
           },
           body: jsonEncode({'charging_station_id': station.id, 'notes': ''}),
         );
-        return response.statusCode == 200 || response.statusCode == 201;
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final data = jsonDecode(response.body);
+          return data['success'] ?? true;
+        }
+        return false;
       } else {
         final wishlistId = await _getWishlistIdForStation(station.id);
         if (wishlistId == null) return false;
@@ -151,7 +148,11 @@ class WishlistService {
           Uri.parse('${ApiEndpoints.wishlist}/$wishlistId'),
           headers: {'Authorization': '${tokenType ?? "Bearer"} $token'},
         );
-        return response.statusCode == 200;
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          return data['success'] == true;
+        }
+        return false;
       }
     } catch (e) {
       print('Error toggling favorite: $e');
@@ -169,14 +170,20 @@ class WishlistService {
 
       final response = await http.get(
         Uri.parse(ApiEndpoints.wishlist),
-        headers: {'Authorization': '${tokenType ?? "Bearer"} $token'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '${tokenType ?? "Bearer"} $token',
+        },
       );
 
       if (response.statusCode == 200) {
         final jsonData = jsonDecode(response.body);
-        final wishlistData = jsonData['data'] != null ? jsonData['data'] : (jsonData is List ? jsonData : []);
+        final wishlistData = jsonData['data'] != null
+            ? jsonData['data']
+            : (jsonData is List ? jsonData : []);
 
         for (var item in wishlistData) {
+          // Check all possible key variations
           if (item['station'] != null && item['station']['id'] == stationId) {
             return item['id'] ?? item['wishlist_id'];
           } else if (item['charging_station_id'] == stationId) {
@@ -188,6 +195,7 @@ class WishlistService {
       }
       return null;
     } catch (e) {
+      print('Error getting wishlist ID: $e');
       return null;
     }
   }

@@ -965,8 +965,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           station: station,
           distance: distance,
           isFavorite: isFavorite,
-          onFavoriteToggle: () {
-            _toggleFavorite(station);
+          onFavoriteToggle: () async {
+            await _toggleFavorite(station);
+            if (mounted) setState(() {});
           },
           onNavigate: () {
             _openNavigation(station.location, station.name);

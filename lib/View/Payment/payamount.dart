@@ -871,7 +871,10 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
     try {
       // Parse the UTC datetime from the API response
       final dateTime = DateTime.parse(dateString);
+<<<<<<< HEAD
 
+=======
+>>>>>>> a87d3c38a1a46d0b90ae00ee07752ae2d55e98d0
       // Convert UTC to IST (UTC+5:30)
       // Check if it's already in UTC
       if (!dateTime.isUtc) {
@@ -890,12 +893,19 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
     }
   }
 
+<<<<<<< HEAD
+=======
+// Helper method to format datetime in 12-hour format with AM/PM
+>>>>>>> a87d3c38a1a46d0b90ae00ee07752ae2d55e98d0
   String _formatTo12Hour(DateTime dateTime) {
     // Format: DD/MM/YYYY hh:mm AM/PM
     final day = dateTime.day.toString().padLeft(2, '0');
     final month = dateTime.month.toString().padLeft(2, '0');
     final year = dateTime.year;
+<<<<<<< HEAD
 
+=======
+>>>>>>> a87d3c38a1a46d0b90ae00ee07752ae2d55e98d0
     // Get hour in 12-hour format
     int hour = dateTime.hour;
     final String amPm = hour >= 12 ? 'PM' : 'AM';
@@ -903,7 +913,10 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
     if (hour == 0) hour = 12;
     final hourStr = hour.toString().padLeft(2, '0');
     final minuteStr = dateTime.minute.toString().padLeft(2, '0');
+<<<<<<< HEAD
 
+=======
+>>>>>>> a87d3c38a1a46d0b90ae00ee07752ae2d55e98d0
     return "$day/$month/$year $hourStr:$minuteStr $amPm";
   }
 

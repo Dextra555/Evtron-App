@@ -27,7 +27,8 @@ class ScannerPage extends StatefulWidget {
   State<ScannerPage> createState() => _ScannerPageState();
 }
 
-class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _ScannerPageState extends State<ScannerPage>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // Camera Controllers
   MobileScannerController? cameraController;
   bool isScanning = true;
@@ -55,8 +56,19 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   String _selectedStatus = 'Available';
 
   // Dropdown Options
-  final List<String> chargerTypes = ['CCS2', 'CHAdeMO', 'Type 2', 'GB/T', 'Tesla Supercharger'];
-  final List<String> statusOptions = ['Available', 'Occupied', 'Maintenance', 'Offline'];
+  final List<String> chargerTypes = [
+    'CCS2',
+    'CHAdeMO',
+    'Type 2',
+    'GB/T',
+    'Tesla Supercharger',
+  ];
+  final List<String> statusOptions = [
+    'Available',
+    'Occupied',
+    'Maintenance',
+    'Offline',
+  ];
 
   // Navigation
   int _currentIndex = 1;
@@ -91,7 +103,10 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     )..repeat(reverse: true);
 
     _scanAnimation = Tween<double>(begin: 0, end: 200).animate(
-      CurvedAnimation(parent: _scanAnimationController, curve: Curves.easeInOut),
+      CurvedAnimation(
+        parent: _scanAnimationController,
+        curve: Curves.easeInOut,
+      ),
     );
 
     // Add listener to connector ID field
@@ -99,7 +114,8 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
 
     // Set initial charger details if provided
     if (widget.chargerDetails != null) {
-      _chargerModelController.text = widget.chargerDetails!['chargerModel'] ?? '';
+      _chargerModelController.text =
+          widget.chargerDetails!['chargerModel'] ?? '';
       _selectedChargerType = widget.chargerDetails!['chargerType'] ?? 'CCS2';
     }
 
@@ -146,7 +162,10 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_hasPermission && cameraController == null && mounted && !_isDisposing) {
+    if (_hasPermission &&
+        cameraController == null &&
+        mounted &&
+        !_isDisposing) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _initializeCamera();
       });
@@ -179,7 +198,10 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
       if (mounted) {
         setState(() {});
         Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted && cameraController != null && !_isStartingCamera && !_isDisposing) {
+          if (mounted &&
+              cameraController != null &&
+              !_isStartingCamera &&
+              !_isDisposing) {
             _startCamera();
           }
         });
@@ -195,7 +217,10 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   }
 
   Future<void> _startCamera() async {
-    if (_isStartingCamera || _isDisposing || !mounted || cameraController == null) {
+    if (_isStartingCamera ||
+        _isDisposing ||
+        !mounted ||
+        cameraController == null) {
       return;
     }
 
@@ -223,7 +248,10 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   }
 
   Future<void> _stopCamera() async {
-    if (cameraController != null && mounted && _isInitialized && !_isDisposing) {
+    if (cameraController != null &&
+        mounted &&
+        _isInitialized &&
+        !_isDisposing) {
       try {
         await cameraController!.stop();
         if (mounted) {
@@ -272,7 +300,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text("Camera Permission Required"),
-        content: const Text("Camera permission is needed to scan QR codes. Please grant permission to continue."),
+        content: const Text(
+          "Camera permission is needed to scan QR codes. Please grant permission to continue.",
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -318,7 +348,11 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     });
     _scanAnimationController.repeat(reverse: true);
 
-    if (!_isInitialized && cameraController != null && mounted && !_isStartingCamera && !_isDisposing) {
+    if (!_isInitialized &&
+        cameraController != null &&
+        mounted &&
+        !_isStartingCamera &&
+        !_isDisposing) {
       _startCamera();
     }
   }
@@ -360,9 +394,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   }
 
   // ========== NAVIGATION METHODS ==========
-// lib/View/Scanner/scanner_page.dart (Updated - Only the relevant part)
+  // lib/View/Scanner/scanner_page.dart (Updated - Only the relevant part)
 
-// ========== NAVIGATION METHODS ==========
+  // ========== NAVIGATION METHODS ==========
   Future<void> _navigateToVehicleScreen(String scannedData) async {
     // Show loading dialog
     showDialog(
@@ -370,7 +404,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
       barrierDismissible: false,
       builder: (BuildContext context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(24.0),
             child: Column(
@@ -435,7 +471,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
         if (validationData.userBalance < 5) {
           _showErrorDialog(
             'Insufficient wallet balance (₹${validationData.userBalance.toStringAsFixed(2)}). '
-                'Minimum balance required: ₹5. Please recharge your wallet.',
+            'Minimum balance required: ₹5. Please recharge your wallet.',
           );
           _resetScanner();
           return;
@@ -454,7 +490,8 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
               vehicles: _vehicles,
               chargerModel: validationData.charger.model.isNotEmpty
                   ? validationData.charger.model
-                  : widget.chargerDetails?['chargerModel'] ?? 'Standard Charger',
+                  : widget.chargerDetails?['chargerModel'] ??
+                        'Standard Charger',
               chargerType: validationData.charger.connectorType.isNotEmpty
                   ? validationData.charger.connectorType
                   : _selectedChargerType,
@@ -489,7 +526,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
         );
         _resetScanner();
       }
-
     } catch (e) {
       print('\n❌ EXCEPTION during validation: $e');
       if (mounted) {
@@ -520,7 +556,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
       barrierDismissible: false,
       builder: (BuildContext context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(24.0),
             child: Column(
@@ -574,7 +612,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
         Navigator.pop(context);
       }
 
-      if (success && mounted && chargingController.currentSession?.data != null) {
+      if (success &&
+          mounted &&
+          chargingController.currentSession?.data != null) {
         print('\n✅ Charging session started successfully!');
 
         final sessionData = chargingController.currentSession!.data!;
@@ -610,9 +650,8 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => ChargingProgressPage(
-                chargingDetails: chargingDetails,
-              ),
+              builder: (context) =>
+                  ChargingProgressPage(chargingDetails: chargingDetails),
             ),
           );
         }
@@ -649,14 +688,14 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
 
   // ========== ERROR DIALOG ==========
   void _showErrorDialog(
-      String errorMessage, {
-        String? title,
-        IconData? icon,
-        Color? iconColor,
-        String? failedCheck,
-        String? errorCode,
-        List<ErrorAction>? actions,
-      }) {
+    String errorMessage, {
+    String? title,
+    IconData? icon,
+    Color? iconColor,
+    String? failedCheck,
+    String? errorCode,
+    List<ErrorAction>? actions,
+  }) {
     // Use values from controller if not provided
     if (title == null && _scanValidationController.response != null) {
       title = _scanValidationController.response!.getErrorTitle();
@@ -682,7 +721,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
       barrierDismissible: false,
       builder: (BuildContext context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Container(
             padding: const EdgeInsets.all(24),
             constraints: const BoxConstraints(maxWidth: 400),
@@ -696,25 +737,23 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                     color: iconColor!.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    icon,
-                    color: iconColor,
-                    size: 48,
-                  ),
+                  child: Icon(icon, color: iconColor, size: 48),
                 ),
                 const SizedBox(height: 20),
 
                 // Title
-                Text(
-                  title!,
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                if (title != null && title!.trim().isNotEmpty) ...[
+                  Text(
+                    title!,
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
+                  const SizedBox(height: 8),
+                ],
 
                 // Message
                 Text(
@@ -741,7 +780,10 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     );
   }
 
-  List<Widget> _buildActionButtons(List<ErrorAction> actions, BuildContext context) {
+  List<Widget> _buildActionButtons(
+    List<ErrorAction> actions,
+    BuildContext context,
+  ) {
     final List<Widget> buttons = [];
 
     for (var i = 0; i < actions.length; i++) {
@@ -813,6 +855,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   }
 
   Widget _buildDefaultButtons(BuildContext context) {
+<<<<<<< HEAD
     return Column(
       children: [
         Row(
@@ -842,8 +885,31 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
             ),
 
           ],
+=======
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: () {
+          Navigator.pop(context);
+          _resetScanner();
+        },
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: Colors.grey.shade300),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+>>>>>>> a87d3c38a1a46d0b90ae00ee07752ae2d55e98d0
         ),
-      ],
+        child: Text(
+          "Try Again",
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade700,
+          ),
+        ),
+      ),
     );
   }
 
@@ -931,9 +997,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                   _resetScanner();
                 }
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Appcolor.green,
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: Appcolor.green),
               child: const Text('Try Again'),
             ),
           ],
@@ -965,12 +1029,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
           ),
         ),
         const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: GoogleFonts.poppins(fontSize: 13),
-          ),
-        ),
+        Expanded(child: Text(text, style: GoogleFonts.poppins(fontSize: 13))),
       ],
     );
   }
@@ -979,10 +1038,15 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       _stopCamera();
     } else if (state == AppLifecycleState.resumed) {
-      if (_hasPermission && mounted && !_isDisposing && cameraController != null && !_isStartingCamera) {
+      if (_hasPermission &&
+          mounted &&
+          !_isDisposing &&
+          cameraController != null &&
+          !_isStartingCamera) {
         _startCamera();
       } else if (_hasPermission && mounted && cameraController == null) {
         _initializeCamera();
@@ -1082,7 +1146,11 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                 color: Colors.white.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.cameraswitch, color: Colors.white, size: 18),
+              child: const Icon(
+                Icons.cameraswitch,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
             onPressed: _switchCamera,
           ),
@@ -1116,9 +1184,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: _initializeCamera,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Appcolor.green,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Appcolor.green),
             child: const Text("Grant Permission"),
           ),
         ],
@@ -1135,10 +1201,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
             valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
           ),
           SizedBox(height: 16),
-          Text(
-            "Initializing camera...",
-            style: TextStyle(color: Colors.white),
-          ),
+          Text("Initializing camera...", style: TextStyle(color: Colors.white)),
         ],
       ),
     );
@@ -1147,10 +1210,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
   Widget _buildScannerView() {
     return Stack(
       children: [
-        MobileScanner(
-          controller: cameraController!,
-          onDetect: _handleScan,
-        ),
+        MobileScanner(controller: cameraController!, onDetect: _handleScan),
 
         Container(
           decoration: BoxDecoration(
@@ -1172,12 +1232,10 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
         _buildScanArea(),
 
         // Scanning Animation
-        if (isScanning && _isInitialized)
-          _buildScanAnimation(),
+        if (isScanning && _isInitialized) _buildScanAnimation(),
 
         // Camera Starting Indicator
-        if (_isStartingCamera && !_isInitialized)
-          _buildCameraStarting(),
+        if (_isStartingCamera && !_isInitialized) _buildCameraStarting(),
 
         // Manual Entry Section
         _buildManualEntry(),
@@ -1231,7 +1289,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                           top: BorderSide(color: Appcolor.green, width: 3.5),
                           left: BorderSide(color: Appcolor.green, width: 3.5),
                         ),
-                        borderRadius: const BorderRadius.only(topLeft: Radius.circular(16)),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(16),
+                        ),
                       ),
                     ),
                   ),
@@ -1247,7 +1307,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                           top: BorderSide(color: Appcolor.green, width: 3.5),
                           right: BorderSide(color: Appcolor.green, width: 3.5),
                         ),
-                        borderRadius: const BorderRadius.only(topRight: Radius.circular(16)),
+                        borderRadius: const BorderRadius.only(
+                          topRight: Radius.circular(16),
+                        ),
                       ),
                     ),
                   ),
@@ -1263,7 +1325,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                           bottom: BorderSide(color: Appcolor.green, width: 3.5),
                           left: BorderSide(color: Appcolor.green, width: 3.5),
                         ),
-                        borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(16)),
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(16),
+                        ),
                       ),
                     ),
                   ),
@@ -1279,7 +1343,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                           bottom: BorderSide(color: Appcolor.green, width: 3.5),
                           right: BorderSide(color: Appcolor.green, width: 3.5),
                         ),
-                        borderRadius: const BorderRadius.only(bottomRight: Radius.circular(16)),
+                        borderRadius: const BorderRadius.only(
+                          bottomRight: Radius.circular(16),
+                        ),
                       ),
                     ),
                   ),
@@ -1297,7 +1363,10 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
       animation: _scanAnimation,
       builder: (context, child) {
         return Positioned(
-          top: (MediaQuery.of(context).size.height * 0.15) + 20 + _scanAnimation.value,
+          top:
+              (MediaQuery.of(context).size.height * 0.15) +
+              20 +
+              _scanAnimation.value,
           left: (MediaQuery.of(context).size.width / 2) - 115,
           child: Container(
             width: 230,
@@ -1335,10 +1404,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
               valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
             ),
             SizedBox(height: 16),
-            Text(
-              "Starting camera...",
-              style: TextStyle(color: Colors.white),
-            ),
+            Text("Starting camera...", style: TextStyle(color: Colors.white)),
           ],
         ),
       ),
@@ -1373,25 +1439,32 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
               style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
               decoration: InputDecoration(
                 hintText: "Enter Connector ID",
-                hintStyle: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade400),
-                prefixIcon: Icon(Icons.ev_station, color: Appcolor.green, size: 20),
+                hintStyle: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: Colors.grey.shade400,
+                ),
+                prefixIcon: Icon(
+                  Icons.ev_station,
+                  color: Appcolor.green,
+                  size: 20,
+                ),
                 // ✅ FIXED: Replace check icon with arrow icon
                 suffixIcon: _isConnectorIdValid
                     ? GestureDetector(
-                  onTap: _startChargingWithManualId,
-                  child: Container(
-                    margin: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Appcolor.green,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.arrow_forward,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                  ),
-                )
+                        onTap: _startChargingWithManualId,
+                        child: Container(
+                          margin: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Appcolor.green,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.arrow_forward,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      )
                     : null,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -1399,7 +1472,10 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                 ),
                 filled: true,
                 fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
               ),
             ),
           ),
@@ -1409,7 +1485,9 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _isConnectorIdValid ? _startChargingWithManualId : null,
+              onPressed: _isConnectorIdValid
+                  ? _startChargingWithManualId
+                  : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Appcolor.green,
                 disabledBackgroundColor: Colors.grey.shade400,

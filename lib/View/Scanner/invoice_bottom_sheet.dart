@@ -183,8 +183,6 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
                     ),
                   ]),
                   const SizedBox(height: 16),
-                  _buildCostBreakdown(invoiceData),
-                  const SizedBox(height: 16),
                   _buildInfoSection('Payment Details', [
                     _buildInfoRow(
                       'Method',
@@ -216,6 +214,8 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
                       '${invoiceData.billing.currency} ${invoiceData.gst.totalGst.toStringAsFixed(2)}',
                     ),
                   ]),
+                  const SizedBox(height: 16),
+                  _buildCostBreakdown(invoiceData),
                   const SizedBox(height: 20),
                   Center(
                     child: Text(
@@ -408,7 +408,7 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
           if (invoiceData.billing.tax > 0) ...[
             const Divider(),
             _buildCostRow(
-              'Tax (${invoiceData.billing.taxPercentage.toStringAsFixed(0)}%)',
+              'GST (${invoiceData.billing.taxPercentage.toStringAsFixed(0)}%)',
               invoiceData.billing.tax,
               invoiceData.billing.currency,
             ),

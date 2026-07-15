@@ -493,7 +493,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     } catch (e) {
       print('\n❌ EXCEPTION during validation: $e');
       if (mounted) {
-        // Close loading dialog if still open
         if (Navigator.canPop(context)) {
           Navigator.pop(context);
         }
@@ -502,6 +501,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
       }
     }
   }
+
   Future<void> _startChargingWithVehicle({
     required String connectorUid,
     required int connectorId,
@@ -515,7 +515,6 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     print('🚗 Vehicle: ${vehicleData['vehicleName']}');
     print('🚗 Vehicle ID: ${vehicleData['vehicleId']}');
 
-    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -572,7 +571,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
       );
 
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
+        Navigator.pop(context);
       }
 
       if (success && mounted && chargingController.currentSession?.data != null) {
@@ -666,7 +665,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
     }
 
     // Default values
-    title ??= 'Charging Failed';
+    title ??= '';
     icon ??= Icons.error_outline;
     iconColor ??= Colors.red;
 
@@ -841,30 +840,7 @@ class _ScannerPageState extends State<ScannerPage> with SingleTickerProviderStat
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _resetScanner();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Appcolor.green,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  "Scan Again",
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
+
           ],
         ),
       ],

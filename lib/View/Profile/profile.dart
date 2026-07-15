@@ -7,6 +7,7 @@ import '../../Model/profile_model.dart';
 import '../Home/mapui.dart';
 import '../Login/Bottom.dart';
 import '../Login/login.dart';
+import 'CustomerDetailsScreen.dart';
 import 'complaint.dart';
 import 'editprofile.dart';
 import 'favourites.dart';
@@ -60,12 +61,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
   int _currentIndex = 3;
   String? _authToken;
+  bool _isCustomerDetailsEnabled = false; // Add this variable
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
     _loadTokenFromPreferences();
+    _loadCustomerDetailsStatus(); // Add this
+  }
+
+  Future<void> _loadCustomerDetailsStatus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _isCustomerDetailsEnabled = prefs.getBool('customer_details_enabled') ?? false;
+      });
+    } catch (e) {
+      print('Error loading customer details status: $e');
+    }
   }
 
   Future<void> _loadTokenFromPreferences() async {
@@ -124,7 +138,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------- Existing Profile Methods ----------
   Future<void> _loadUserProfile() async {
     setState(() {
       _isLoading = true;
@@ -275,9 +288,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _buildMenuItems(),
         const SizedBox(height: 16),
         _buildLogoutButton(),
-        // const SizedBox(height: 12),
-        // _buildTokenDisplay(), // Display token below logout button
-        // const SizedBox(height: 25),
       ],
     );
   }
@@ -368,16 +378,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildMenuItems() {
     return Column(
       children: [
-        // _buildMenuItem(
-        //   icon: Icons.favorite_border,
-        //   title: 'Favorites',
-        //   onTap: () {
-        //     Navigator.push(
-        //       context,
-        //       MaterialPageRoute(builder: (context) => const FavoriteStationsScreen()),
-        //     );
-        //   },
-        // ),
+        _buildMenuItemWithStatus(
+          icon: Icons.business_center,
+          title: 'Customer Details',
+          onTap: () async {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const CustomerDetailsScreen(),
+              ),
+            );
+
+            if (result == true) {
+              _loadCustomerDetailsStatus();
+            }
+          },
+          isEnabled: _isCustomerDetailsEnabled,
+        ),
+
         _buildMenuItem(
           icon: Icons.electric_car,
           title: "My Ev's",
@@ -427,6 +445,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _buildMenuItemWithStatus({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    required bool isEnabled,
+  }) {
+    return ListTile(
+      leading: Icon(
+        icon,
+        color: widget.isDarkMode ? Colors.grey[400] : Colors.grey[600],
+        size: 20,
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 14,
+          color: widget.isDarkMode ? Colors.white : Colors.black,
+        ),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+
+          const SizedBox(width: 4),
+          Icon(
+            Icons.chevron_right,
+            color: widget.isDarkMode ? Colors.grey[600] : Colors.grey[400],
+            size: 18,
+          ),
+        ],
+      ),
+      onTap: onTap,
+      dense: true,
+    );
+  }
+
+  // Regular menu item (unchanged)
   Widget _buildMenuItem({
     required IconData icon,
     required String title,
@@ -637,4 +692,3 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 }
-

@@ -16,7 +16,6 @@ class InvoiceService {
 
   Future<InvoiceResponse> getInvoice(int sessionId) async {
     try {
-      // Fix: Use getUserToken() instead of getToken()
       final token = await AuthService.getUserToken();
 
       if (token == null || token.isEmpty) {
@@ -46,12 +45,20 @@ class InvoiceService {
         throw Exception('Unauthorized: Invalid or expired token');
       } else if (response.statusCode == 404) {
         throw Exception('Invoice not found for session ID: $sessionId');
-      } else {
-        throw Exception('Failed to load invoice: ${response.statusCode} - ${response.body}');
+      }  else if (response.statusCode >= 500) {
+        throw Exception('Server error. Please try again later.');
+      }else {
+        throw Exception('Unable to fetch invoice. Please try again.');
       }
     } catch (e) {
       print('❌ Error fetching invoice: $e');
-      throw Exception('Error fetching invoice: $e');
+
+      // Don't expose backend exceptions to UI
+      if (e.toString().contains('Server error')) {
+        throw Exception('Server error. Please try again later.');
+      }
+
+      throw Exception('Unable to fetch invoice. Please try again.');
     }
   }
 }

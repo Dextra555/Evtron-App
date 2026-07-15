@@ -601,6 +601,7 @@ class PdfService {
                     ),
 
                     // CGST ROW
+                    // CGST ROW (updated with dynamic rate)
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 0),
                       child: pw.Row(
@@ -612,7 +613,7 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                'CGST (9%):',
+                                'CGST (${invoiceData.gst.cgstRate.toStringAsFixed(0)}%):',
                                 style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
                               ),
                             ),
@@ -631,7 +632,6 @@ class PdfService {
                       ),
                     ),
 
-                    // SGST ROW
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 0),
                       child: pw.Row(
@@ -643,7 +643,7 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                'SGST (9%):',
+                                'SGST (${invoiceData.gst.sgstRate.toStringAsFixed(0)}%):',
                                 style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
                               ),
                             ),
@@ -962,3 +962,4 @@ class PdfService {
     await OpenFile.open(filePath);
   }
 }
+

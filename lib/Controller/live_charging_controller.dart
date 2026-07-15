@@ -465,9 +465,30 @@ class LiveChargingController extends ChangeNotifier {
 
   String get formattedStartedAt {
     if (_currentLiveData?.startedAt == null) return "N/A";
-    final dateTime = _currentLiveData!.startedAt;
-    final localTime = dateTime.toLocal();
-    return "${localTime.toString().split('.')[0]}";
+
+    try {
+      final dateTime = _currentLiveData!.startedAt;
+      final localTime = dateTime.toLocal();
+
+      // Format to "dd/MM/yyyy hh:mm:ss a"
+      String day = localTime.day.toString().padLeft(2, '0');
+      String month = localTime.month.toString().padLeft(2, '0');
+      String year = localTime.year.toString();
+
+      // Convert to 12-hour format
+      int hour12 = localTime.hour % 12;
+      if (hour12 == 0) hour12 = 12;
+      String hour = hour12.toString().padLeft(2, '0');
+      String minute = localTime.minute.toString().padLeft(2, '0');
+      String second = localTime.second.toString().padLeft(2, '0');
+
+      String amPm = localTime.hour >= 12 ? 'PM' : 'AM';
+
+      return '$day/$month/$year $hour:$minute:$second $amPm';
+    } catch (e) {
+      print('⚠️ Error formatting startedAt: $e');
+      return _currentLiveData?.startedAt.toString() ?? "N/A";
+    }
   }
 
   String get formattedEndedAt {

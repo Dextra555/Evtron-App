@@ -869,11 +869,42 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
 
   String _formatDate(String dateString) {
     try {
+      // Parse the UTC datetime from the API response
       final dateTime = DateTime.parse(dateString);
-      return "${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}";
+
+      // Convert UTC to IST (UTC+5:30)
+      // Check if it's already in UTC
+      if (!dateTime.isUtc) {
+        // If not UTC, convert to UTC first (assuming it might be local)
+        final utcDateTime = dateTime.toUtc();
+        // Then add IST offset
+        final istDateTime = utcDateTime.add(const Duration(hours: 5, minutes: 30));
+        return _formatTo12Hour(istDateTime);
+      } else {
+        // If it's UTC, directly add IST offset
+        final istDateTime = dateTime.add(const Duration(hours: 5, minutes: 30));
+        return _formatTo12Hour(istDateTime);
+      }
     } catch (e) {
       return dateString;
     }
+  }
+
+  String _formatTo12Hour(DateTime dateTime) {
+    // Format: DD/MM/YYYY hh:mm AM/PM
+    final day = dateTime.day.toString().padLeft(2, '0');
+    final month = dateTime.month.toString().padLeft(2, '0');
+    final year = dateTime.year;
+
+    // Get hour in 12-hour format
+    int hour = dateTime.hour;
+    final String amPm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12;
+    if (hour == 0) hour = 12;
+    final hourStr = hour.toString().padLeft(2, '0');
+    final minuteStr = dateTime.minute.toString().padLeft(2, '0');
+
+    return "$day/$month/$year $hourStr:$minuteStr $amPm";
   }
 
   Future<void> _handleReceiptDownload() async {

@@ -318,11 +318,11 @@ class ChargingSessionResponse {
     }
 
     // Always add "Go Back" option
-    actions.add(ErrorAction(
-      label: 'Go Back',
-      action: 'go_back',
-      isPrimary: false,
-    ));
+    // actions.add(ErrorAction(
+    //   label: 'Go Back',
+    //   action: 'go_back',
+    //   isPrimary: false,
+    // ));
 
     return actions;
   }

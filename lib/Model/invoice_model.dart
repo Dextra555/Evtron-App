@@ -83,13 +83,15 @@ class InvoiceData {
   final StationInfo station;
   final String charger;
   final String connector;
-  final VehicleInfo? vehicle;
+  final String vehicle;
   final SessionInfo session;
   final EnergyInfo energy;
   final BillingInfo billing;
   final GstInfo gst;
   final PaymentInfo payment;
   final CostBreakdown costBreakdown;
+  final BilledTo billedTo;
+
 
   InvoiceData({
     required this.invoiceId,
@@ -102,13 +104,14 @@ class InvoiceData {
     required this.station,
     required this.charger,
     required this.connector,
-    this.vehicle,
+    required this.vehicle,
     required this.session,
     required this.energy,
     required this.billing,
     required this.gst,
     required this.payment,
     required this.costBreakdown,
+    required this.billedTo,
   });
 
   factory InvoiceData.fromJson(Map<String, dynamic> json) {
@@ -131,11 +134,12 @@ class InvoiceData {
       status: _asString(data['status']),
       tid: transactionId,
       user: UserInfo.fromJson(_asMap(data['user'])),
+      billedTo: BilledTo.fromJson(_asMap(data['billed_to'])), // Add this
       company: data['company'] != null ? CompanyInfo.fromJson(_asMap(data['company'])) : null,
       station: StationInfo.fromJson(_asMap(data['station'])),
       charger: _asString(data['charger']),
       connector: _asString(data['connector']),
-      vehicle: data['vehicle'] != null ? VehicleInfo.fromJson(_asMap(data['vehicle'])) : null,
+      vehicle: _asString(data['vehicle']), // Changed to String
       session: SessionInfo.fromJson(_asMap(data['session'])),
       energy: EnergyInfo.fromJson(_asMap(data['energy'])),
       billing: BillingInfo.fromJson(_asMap(data['billing'])),
@@ -145,6 +149,7 @@ class InvoiceData {
     );
   }
 }
+
 
 class UserInfo {
   final String name;
@@ -436,6 +441,27 @@ class CostBreakdown {
       subtotal: _asDouble(data['subtotal']),
       tax: _asDouble(data['tax']),
       total: _asDouble(data['total']),
+    );
+  }
+}
+
+class BilledTo {
+  final String? businessName;
+  final String? address;
+  final String? gstNumber;
+
+  BilledTo({
+    this.businessName,
+    this.address,
+    this.gstNumber,
+  });
+
+  factory BilledTo.fromJson(Map<String, dynamic> json) {
+    final data = _asMap(json);
+    return BilledTo(
+      businessName: _asNullableString(data['business_name']),
+      address: _asNullableString(data['address']),
+      gstNumber: _asNullableString(data['gst_number']),
     );
   }
 }

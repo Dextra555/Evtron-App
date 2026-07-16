@@ -418,8 +418,8 @@ class PdfService {
                         pw.Text(
                           companyName,
                           style: pw.TextStyle(
-                            fontSize: 14,
-                            fontWeight: pw.FontWeight.normal,
+                            fontSize: 13,
+                            fontWeight: pw.FontWeight.bold,
                             color: PdfColors.grey700,
                           ),
                         ),
@@ -452,15 +452,16 @@ class PdfService {
                         pw.Text(
                           'BILLED TO',
                           style: pw.TextStyle(
-                            fontSize: 12,
+                            fontSize: 10,
                             fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey800,
                           ),
                         ),
                         pw.SizedBox(height: 4),
                         pw.Text(
                           invoiceData.user.name,
                           style: pw.TextStyle(
-                            fontSize: 11,
+                            fontSize: 10,
                             color: PdfColors.grey700,
                           ),
                         ),
@@ -470,16 +471,16 @@ class PdfService {
                             pw.Text(
                               'BUSINESS NAME: ',
                               style: pw.TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.grey900,
+                                color: PdfColors.grey800,
                               ),
                             ),
                             pw.Expanded(
                               child: pw.Text(
-                                invoiceData.user.businessName ?? 'NA',
+                                invoiceData.billedTo.businessName ?? 'NA',
                                 style: pw.TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 10,
                                   fontWeight: pw.FontWeight.normal,
                                   color: PdfColors.grey900,
                                 ),
@@ -494,16 +495,16 @@ class PdfService {
                             pw.Text(
                               'ADDRESS: ',
                               style: pw.TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.grey900,
+                                color: PdfColors.grey800,
                               ),
                             ),
                             pw.Expanded(
                               child: pw.Text(
-                                invoiceData.user.address ?? 'NA',
+                                invoiceData.billedTo.address ?? 'NA',
                                 style: pw.TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 10,
                                   fontWeight: pw.FontWeight.normal,
                                   color: PdfColors.grey900,
                                 ),
@@ -517,15 +518,15 @@ class PdfService {
                             pw.Text(
                               'GSTIN: ',
                               style: pw.TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.grey900,
+                                color: PdfColors.grey800,
                               ),
                             ),
                             pw.Text(
-                              invoiceData.user.gstin ?? 'NA',
+                              invoiceData.billedTo.gstNumber ?? 'NA',
                               style: pw.TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: pw.FontWeight.normal,
                                 color: PdfColors.grey900,
                               ),
@@ -550,22 +551,23 @@ class PdfService {
                         pw.Text(
                           'STATION',
                           style: pw.TextStyle(
-                            fontSize: 12,
+                            fontSize: 10,
                             fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey800,
                           ),
                         ),
                         pw.SizedBox(height: 4),
                         pw.Text(
                           invoiceData.station.name,
                           style: pw.TextStyle(
-                            fontSize: 11,
+                            fontSize: 10,
                             color: PdfColors.grey700,
                           ),
                         ),
                         pw.Text(
                           invoiceData.station.address,
                           style: pw.TextStyle(
-                            fontSize: 11,
+                            fontSize: 10,
                             color: PdfColors.grey700,
                           ),
                         ),
@@ -581,15 +583,15 @@ class PdfService {
                             pw.Text(
                               'CHARGE POINT: ',
                               style: pw.TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.grey900,
+                                color: PdfColors.grey800,
                               ),
                             ),
                             pw.Text(
                               invoiceData.charger,
                               style: pw.TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: pw.FontWeight.normal,
                                 color: PdfColors.grey900,
                               ),
@@ -601,15 +603,15 @@ class PdfService {
                             pw.Text(
                               'CONNECTOR TYPE: ',
                               style: pw.TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.grey900,
+                                color: PdfColors.grey800,
                               ),
                             ),
                             pw.Text(
                               invoiceData.connector,
                               style: pw.TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: pw.FontWeight.normal,
                                 color: PdfColors.grey900,
                               ),
@@ -728,7 +730,7 @@ class PdfService {
                               child: pw.Text(
                                 'Session Fee:',
                                 style: pw.TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
                               ),
@@ -741,7 +743,7 @@ class PdfService {
                               child: pw.Text(
                                 '${invoiceData.costBreakdown.serviceFee.toStringAsFixed(2)}',
                                 style: pw.TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
                               ),
@@ -768,7 +770,7 @@ class PdfService {
                               child: pw.Text(
                                 'Idle Fee:',
                                 style: pw.TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
                               ),
@@ -781,7 +783,7 @@ class PdfService {
                               child: pw.Text(
                                 '${invoiceData.costBreakdown.idleCost.toStringAsFixed(2)}',
                                 style: pw.TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
                               ),
@@ -809,7 +811,7 @@ class PdfService {
                               child: pw.Text(
                                 'CGST (${invoiceData.gst.cgstRate}%):',
                                 style: pw.TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
                               ),
@@ -822,7 +824,7 @@ class PdfService {
                               child: pw.Text(
                                 '${invoiceData.gst.cgstAmount.toStringAsFixed(2)}',
                                 style: pw.TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
                               ),
@@ -849,7 +851,7 @@ class PdfService {
                               child: pw.Text(
                                 'SGST (${invoiceData.gst.sgstRate}%):',
                                 style: pw.TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
                               ),
@@ -862,7 +864,7 @@ class PdfService {
                               child: pw.Text(
                                 '${invoiceData.gst.sgstAmount.toStringAsFixed(2)}',
                                 style: pw.TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
                               ),
@@ -928,15 +930,15 @@ class PdfService {
                   pw.Text(
                     'PAYMENT METHOD : ',
                     style: pw.TextStyle(
-                      fontSize: 12,
+                      fontSize: 10,
                       fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.grey700,
+                      color: PdfColors.grey800,
                     ),
                   ),
                   pw.Text(
                     invoiceData.payment.method.toUpperCase(),
                     style: pw.TextStyle(
-                      fontSize: 12,
+                      fontSize: 10,
                       fontWeight: pw.FontWeight.normal,
                       color: PdfColors.grey700,
                     ),
@@ -945,24 +947,23 @@ class PdfService {
               ),
               pw.SizedBox(height: 8),
 
-// Amount in Words
               pw.Row(
                 children: [
                   pw.Text(
                     'AMOUNT IN WORDS : ',
                     style: pw.TextStyle(
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.grey400,
+                      color: PdfColors.grey800,
                     ),
                   ),
                   pw.Expanded(
                     child: pw.Text(
                       _numberToWords(invoiceData.billing.total),
                       style: pw.TextStyle(
-                        fontSize: 11,
+                        fontSize: 10,
                         fontWeight: pw.FontWeight.normal,
-                        color: PdfColors.grey400,
+                        color: PdfColors.grey800,
                       ),
                     ),
                   ),
@@ -970,14 +971,13 @@ class PdfService {
               ),
 
               pw.SizedBox(height: 50),
-              // Removed footer text completely
               pw.Center(
                 child: pw.Text(
                   'THIS IS A COMPUTER GENERATED INVOICE',
                   style: pw.TextStyle(
-                    fontSize: 9,
+                    fontSize: 10,
                     fontWeight: pw.FontWeight.bold,
-                    color: PdfColors.grey600,
+                    color: PdfColors.grey800,
                   ),
                 ),
               ),

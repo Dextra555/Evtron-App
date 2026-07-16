@@ -855,37 +855,6 @@ class _ScannerPageState extends State<ScannerPage>
   }
 
   Widget _buildDefaultButtons(BuildContext context) {
-<<<<<<< HEAD
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _resetScanner();
-                },
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.grey.shade300),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  "Try Again",
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-              ),
-            ),
-
-          ],
-=======
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton(
@@ -899,7 +868,6 @@ class _ScannerPageState extends State<ScannerPage>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
->>>>>>> a87d3c38a1a46d0b90ae00ee07752ae2d55e98d0
         ),
         child: Text(
           "Try Again",

@@ -53,7 +53,6 @@ class InvoiceService {
     } catch (e) {
       print('❌ Error fetching invoice: $e');
 
-      // Don't expose backend exceptions to UI
       if (e.toString().contains('Server error')) {
         throw Exception('Server error. Please try again later.');
       }
@@ -62,5 +61,4 @@ class InvoiceService {
     }
   }
 }
-
 

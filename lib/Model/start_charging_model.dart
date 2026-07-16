@@ -318,11 +318,11 @@ class ChargingSessionResponse {
     }
 
     // Always add "Go Back" option
-    actions.add(ErrorAction(
-      label: 'Go Back',
-      action: 'go_back',
-      isPrimary: false,
-    ));
+    // actions.add(ErrorAction(
+    //   label: 'Go Back',
+    //   action: 'go_back',
+    //   isPrimary: false,
+    // ));
 
     return actions;
   }
@@ -340,7 +340,6 @@ class ErrorAction {
   });
 }
 
-// Keep existing data classes unchanged...
 class ChargingSessionData {
   final int sessionId;
   final String transactionId;

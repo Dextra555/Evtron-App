@@ -340,7 +340,6 @@ class ErrorAction {
   });
 }
 
-// Keep existing data classes unchanged...
 class ChargingSessionData {
   final int sessionId;
   final String transactionId;

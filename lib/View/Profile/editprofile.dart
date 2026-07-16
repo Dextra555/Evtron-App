@@ -23,6 +23,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController nameController;
   late TextEditingController phoneController;
   late TextEditingController emailController;
+  late TextEditingController businessNameController;
+  late TextEditingController businessAddressController;
+  late TextEditingController gstinController;
 
   final EditProfileController _editProfileController = EditProfileController();
 
@@ -35,6 +38,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     nameController = TextEditingController(text: widget.name);
     phoneController = TextEditingController(text: widget.phoneNumber);
     emailController = TextEditingController(text: widget.email);
+
+    businessNameController = TextEditingController();
+    businessAddressController = TextEditingController();
+    gstinController = TextEditingController();
   }
 
   @override
@@ -42,6 +49,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     nameController.dispose();
     phoneController.dispose();
     emailController.dispose();
+
+    businessNameController.dispose();
+    businessAddressController.dispose();
+    gstinController.dispose();
     super.dispose();
   }
 
@@ -108,7 +119,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       return false;
     }
 
-    // Validate email format
     String emailPattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$';
     RegExp regExp = RegExp(emailPattern);
     if (!regExp.hasMatch(emailController.text.trim())) {
@@ -220,6 +230,31 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           keyboardType: TextInputType.emailAddress,
         ),
         const SizedBox(height: 30),
+
+        _buildTextField(
+          controller: businessNameController,
+          label: "Business Name",
+          hint: "Enter your business name",
+          icon: Icons.business_outlined,
+        ),
+
+        const SizedBox(height: 20),
+
+        _buildTextField(
+          controller: businessAddressController,
+          label: "Business Address",
+          hint: "Enter your business address",
+          icon: Icons.location_on_outlined,
+          maxLines: 3,
+        ),
+
+        const SizedBox(height: 20),
+
+        _buildGSTINField(),
+
+        const SizedBox(height: 30),
+
+
       ],
     );
   }
@@ -230,7 +265,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     required String hint,
     required IconData icon,
     TextInputType? keyboardType,
-  }) {
+    int maxLines = 1,
+  })
+  {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -280,6 +317,73 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+
+  Widget _buildGSTINField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "GSTIN Number",
+          style: GoogleFonts.poppins(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: isDarkMode ? Colors.grey[400] : Colors.grey[700],
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: gstinController,
+          maxLength: 15,
+          textCapitalization: TextCapitalization.characters,
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            letterSpacing: 1.2,
+            color: isDarkMode ? Colors.white : Colors.black,
+          ),
+          decoration: InputDecoration(
+            hintText: "22AAAAA0000A1Z5",
+            hintStyle: GoogleFonts.poppins(
+              fontSize: 13,
+              color: isDarkMode ? Colors.grey[600] : Colors.grey[400],
+            ),
+            prefixIcon: const Icon(
+              Icons.assignment_outlined,
+              color: Colors.green,
+              size: 20,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(
+                color: isDarkMode
+                    ? Colors.grey[800]!
+                    : Colors.grey[300]!,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(
+                color: isDarkMode
+                    ? Colors.grey[800]!
+                    : Colors.grey[300]!,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(
+                color: Colors.green,
+                width: 1.5,
+              ),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildLoadingOverlay() {
     return Container(
       color: Colors.black.withOpacity(0.5),
@@ -291,3 +395,4 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 }
+

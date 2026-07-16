@@ -871,6 +871,7 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
     try {
       // Parse the UTC datetime from the API response
       final dateTime = DateTime.parse(dateString);
+
       // Convert UTC to IST (UTC+5:30)
       // Check if it's already in UTC
       if (!dateTime.isUtc) {
@@ -895,6 +896,7 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
     final day = dateTime.day.toString().padLeft(2, '0');
     final month = dateTime.month.toString().padLeft(2, '0');
     final year = dateTime.year;
+
     // Get hour in 12-hour format
     int hour = dateTime.hour;
     final String amPm = hour >= 12 ? 'PM' : 'AM';
@@ -902,6 +904,7 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
     if (hour == 0) hour = 12;
     final hourStr = hour.toString().padLeft(2, '0');
     final minuteStr = dateTime.minute.toString().padLeft(2, '0');
+
     return "$day/$month/$year $hourStr:$minuteStr $amPm";
   }
 

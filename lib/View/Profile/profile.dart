@@ -368,16 +368,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildMenuItems() {
     return Column(
       children: [
-        // _buildMenuItem(
-        //   icon: Icons.favorite_border,
-        //   title: 'Favorites',
-        //   onTap: () {
-        //     Navigator.push(
-        //       context,
-        //       MaterialPageRoute(builder: (context) => const FavoriteStationsScreen()),
-        //     );
-        //   },
-        // ),
+
         _buildMenuItem(
           icon: Icons.electric_car,
           title: "My Ev's",
@@ -637,4 +628,5 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 }
+
 

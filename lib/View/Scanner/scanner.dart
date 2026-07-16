@@ -529,7 +529,6 @@ class _ScannerPageState extends State<ScannerPage>
     } catch (e) {
       print('\n❌ EXCEPTION during validation: $e');
       if (mounted) {
-        // Close loading dialog if still open
         if (Navigator.canPop(context)) {
           Navigator.pop(context);
         }
@@ -552,7 +551,6 @@ class _ScannerPageState extends State<ScannerPage>
     print('🚗 Vehicle: ${vehicleData['vehicleName']}');
     print('🚗 Vehicle ID: ${vehicleData['vehicleId']}');
 
-    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -611,7 +609,7 @@ class _ScannerPageState extends State<ScannerPage>
       );
 
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
+        Navigator.pop(context);
       }
 
       if (success &&

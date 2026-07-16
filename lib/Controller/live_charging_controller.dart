@@ -468,14 +468,13 @@ class LiveChargingController extends ChangeNotifier {
 
     try {
       final dateTime = _currentLiveData!.startedAt;
+      // The dateTime is already parsed correctly, just format it for display
       final localTime = dateTime.toLocal();
 
-      // Format to "dd/MM/yyyy hh:mm:ss a"
       String day = localTime.day.toString().padLeft(2, '0');
       String month = localTime.month.toString().padLeft(2, '0');
       String year = localTime.year.toString();
 
-      // Convert to 12-hour format
       int hour12 = localTime.hour % 12;
       if (hour12 == 0) hour12 = 12;
       String hour = hour12.toString().padLeft(2, '0');
@@ -622,11 +621,45 @@ class LiveChargingController extends ChangeNotifier {
         // ✅ Load vehicle details from storage (same as session ID)
         await _loadVehicleDetailsFromStorage();
 
-        // Check if it's a terminal session
+        // ✅ Check if it's "preparing" state - this is normal during start
+        // Don't treat preparing as terminal or error
+        if (data.isPreparing) {
+          print('⏳ Charger is preparing - waiting for it to start...');
+          _errorMessage = null;
+          _pollingAttempts = 0;
+          _consecutiveFailures = 0; // Reset failures for preparing state
+          _isNoActiveSession = false;
+          _shouldPoll = true;
+          _pollingStoppedByNetwork = false;
+
+          await _saveSessionData(data);
+          _isLoading = false;
+          _scheduleDebouncedUpdate();
+          return true;
+        }
+
+        // ✅ Check if it's "suspended" or "finishing" - these are intermediate states
+        if (data.isSuspended || data.isFinishing) {
+          print('⏳ Session is ${data.phase} - continuing to monitor...');
+          _errorMessage = null;
+          _pollingAttempts = 0;
+          _consecutiveFailures = 0;
+          _isNoActiveSession = false;
+          _shouldPoll = true;
+          _pollingStoppedByNetwork = false;
+
+          await _saveSessionData(data);
+          _isLoading = false;
+          _scheduleDebouncedUpdate();
+          return true;
+        }
+
+        // Check if it's a terminal session (completed or error)
         final isTerminal = data.isCompleted ||
             data.hasError ||
             data.status.toLowerCase() == 'stopped' ||
-            data.status.toLowerCase() == 'finished';
+            data.status.toLowerCase() == 'finished' ||
+            data.status.toLowerCase() == 'interrupted';
 
         if (isTerminal) {
           print('⚠️ Session is terminal (${data.status}) - stopping polling but keeping data');
@@ -641,7 +674,7 @@ class LiveChargingController extends ChangeNotifier {
           return true;
         }
 
-        // Normal active session
+        // Normal active session (charging state)
         _errorMessage = null;
         _pollingAttempts = 0;
         _consecutiveFailures = 0;
@@ -660,6 +693,7 @@ class LiveChargingController extends ChangeNotifier {
         _scheduleDebouncedUpdate();
         return true;
       } else {
+        // ⚠️ Response was not successful
         final shouldRetry = _liveChargingService.shouldRetryAfterFailure(response.message);
 
         if (shouldRetry) {
@@ -680,7 +714,7 @@ class LiveChargingController extends ChangeNotifier {
           return false;
         }
 
-        // No active session
+        // ❌ No active session - clear everything
         _isNoActiveSession = true;
         _currentLiveData = null;
         _currentSessionId = null;
@@ -692,11 +726,16 @@ class LiveChargingController extends ChangeNotifier {
         return false;
       }
     } catch (e) {
+      // 🚨 Exception occurred
       _errorMessage = e.toString();
       _pollingAttempts++;
       _consecutiveFailures++;
 
-      final shouldRetry = _liveChargingService.shouldRetryAfterFailure(_errorMessage);
+      // Check if we should retry based on error type
+      final shouldRetry = _liveChargingService.shouldRetryAfterFailure(_errorMessage) ||
+          e.toString().contains('TimeoutException') ||
+          e.toString().contains('SocketException');
+
       if (!shouldRetry) {
         _consecutiveFailures = maxConsecutiveFailures;
       }

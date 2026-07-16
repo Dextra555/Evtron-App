@@ -175,9 +175,37 @@ class LiveChargingData {
     if (value is DateTime) return value;
     if (value is String) {
       try {
+        // Try parsing the custom format: "dd/MM/yyyy hh:mm:ss a"
+        // Example: "16/07/2026 11:29:18 AM"
+        final parts = value.split(' ');
+        if (parts.length == 3) {
+          final dateParts = parts[0].split('/');
+          final timeParts = parts[1].split(':');
+          final ampm = parts[2].toUpperCase();
+
+          if (dateParts.length == 3 && timeParts.length == 3) {
+            final day = int.parse(dateParts[0]);
+            final month = int.parse(dateParts[1]);
+            final year = int.parse(dateParts[2]);
+            var hour = int.parse(timeParts[0]);
+            final minute = int.parse(timeParts[1]);
+            final second = int.parse(timeParts[2]);
+
+            // Convert 12-hour to 24-hour
+            if (ampm == 'PM' && hour != 12) {
+              hour += 12;
+            } else if (ampm == 'AM' && hour == 12) {
+              hour = 0;
+            }
+
+            return DateTime(year, month, day, hour, minute, second);
+          }
+        }
+
+        // Fallback to default parsing
         return DateTime.parse(value);
       } catch (e) {
-        print('⚠️ Error parsing DateTime: $e');
+        print('⚠️ Error parsing DateTime from "$value": $e');
         return DateTime.now();
       }
     }
@@ -211,6 +239,13 @@ class LiveChargingData {
     return preparingStatuses.contains(status.toLowerCase()) ||
         preparingStatuses.contains(phase.toLowerCase()) ||
         (status.toLowerCase() == 'active' && phase.toLowerCase() == 'preparing');
+  }
+
+  // ✅ Add this method
+  bool get isWaiting {
+    final waitingStatuses = ['waiting', 'starting', 'preparing'];
+    return waitingStatuses.contains(status.toLowerCase()) ||
+        waitingStatuses.contains(phase.toLowerCase());
   }
 
   bool get isSuspended {

@@ -931,6 +931,8 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
     }
   }
 
+// In _recoverAndStartPolling method in ChargingProgressPage
+
   Future<void> _recoverAndStartPolling() async {
     if (!_isMounted) return;
 
@@ -955,7 +957,8 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
 
           if (success && _liveChargingController.currentLiveData != null) {
             final liveData = _liveChargingController.currentLiveData!;
-            if (!liveData.isCompleted) {
+            // ✅ Don't treat preparing or timeout as failure
+            if (!liveData.isCompleted && !liveData.hasError) {
               print('✅ Active session found: $sessionId');
               _hideLoadingDialog();
               _startPolling(sessionId);
@@ -964,7 +967,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
               });
               return;
             } else {
-              print('⚠️ Session is completed');
+              print('⚠️ Session is completed or has error');
             }
           }
         }
@@ -974,7 +977,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
       _updateLoadingDialogMessage('Connecting to charger...');
 
       int retryCount = 0;
-      const maxRetries = 15;
+      const maxRetries = 30; // Increase to 30 (90 seconds total)
       bool foundActiveSession = false;
 
       while (retryCount < maxRetries && !foundActiveSession && _isMounted) {
@@ -982,44 +985,49 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
 
         if (retryCount % 3 == 0) {
           _updateLoadingDialogMessage(
-            'Waiting for charger response... (${(retryCount + 1) * 3}s)',
+            'Waiting for charger to start... (${(retryCount + 1) * 3}s)',
           );
         }
 
-        final success = await _liveChargingController.fetchLiveChargingStatus();
+        try {
+          final success = await _liveChargingController.fetchLiveChargingStatus();
 
-        if (!_isMounted) break;
+          if (!_isMounted) break;
 
-        if (success && _liveChargingController.currentLiveData != null) {
-          final liveData = _liveChargingController.currentLiveData!;
-          if (!liveData.isCompleted) {
-            final sessionId = liveData.sessionId;
-            print('✅ Found active session after polling: $sessionId');
-            print('   Status: ${liveData.status}');
-            print('   Phase: ${liveData.phase}');
+          if (success && _liveChargingController.currentLiveData != null) {
+            final liveData = _liveChargingController.currentLiveData!;
+            // ✅ Accept preparing state as valid
+            if (!liveData.isCompleted && !liveData.hasError) {
+              final sessionId = liveData.sessionId;
+              print('✅ Found active session after polling: $sessionId');
+              print('   Status: ${liveData.status}');
+              print('   Phase: ${liveData.phase}');
 
-            await ChargingSessionService.saveSessionIdOnly(sessionId);
-            await ChargingSessionService.saveActiveSession(
-              sessionId: sessionId,
-              startedAt: liveData.startedAt,
-              status: liveData.status,
-              phase: liveData.phase,
-              transactionId: liveData.transactionId,
-            );
+              await ChargingSessionService.saveSessionIdOnly(sessionId);
+              await ChargingSessionService.saveActiveSession(
+                sessionId: sessionId,
+                startedAt: liveData.startedAt,
+                status: liveData.status,
+                phase: liveData.phase,
+                transactionId: liveData.transactionId,
+              );
 
-            _hideLoadingDialog();
-            _startPolling(sessionId);
-            foundActiveSession = true;
-            setState(() {
-              _isRecovering = false;
-            });
-            return;
-          } else {
-            print(
-              '⏳ Session is in terminal state: ${liveData.status}, retrying...',
-            );
+              _hideLoadingDialog();
+              _startPolling(sessionId);
+              foundActiveSession = true;
+              setState(() {
+                _isRecovering = false;
+              });
+              return;
+            } else {
+              print('⏳ Session in state: ${liveData.status}, retrying...');
+            }
           }
+        } catch (e) {
+          print('⚠️ Polling attempt $retryCount failed: $e');
+          // ✅ Don't break on timeout, keep retrying
         }
+
         retryCount++;
       }
 
@@ -1534,7 +1542,6 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
       await prefs.remove('session_data');
       await prefs.remove('session_id_only');
 
-      // ✅ Clear session-specific vehicle keys
       final sessionId = _currentSessionId;
       if (sessionId != null) {
         await prefs.remove('session_${sessionId}_vehicle_name');
@@ -2090,40 +2097,6 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
                                               ),
                                             ],
                                           ),
-                                          const SizedBox(height: 6),
-                                          // Row(
-                                          //   mainAxisAlignment:
-                                          //       MainAxisAlignment.end,
-                                          //   children: [
-                                          //     Container(
-                                          //       width: 8,
-                                          //       height: 8,
-                                          //       decoration: BoxDecoration(
-                                          //         shape: BoxShape.circle,
-                                          //         color:
-                                          //             controller
-                                          //                     .chargingStatus ==
-                                          //                 "Charging"
-                                          //             ? Appcolor.green
-                                          //             : Colors.red,
-                                          //       ),
-                                          //     ),
-                                          //     const SizedBox(width: 4),
-                                          //     // Expanded(
-                                          //     //   child: Text(
-                                          //     //     "Refresh in ${(controller.pollIntervalMs / 1000).toInt()}s",
-                                          //     //     style: TextStyle(
-                                          //     //       color: Colors.grey.shade600,
-                                          //     //       fontSize: 11,
-                                          //     //       fontFamily:
-                                          //     //           Appcolor.fontFamily,
-                                          //     //     ),
-                                          //     //     overflow:
-                                          //     //         TextOverflow.ellipsis,
-                                          //     //   ),
-                                          //     // ),
-                                          //   ],
-                                          // ),
                                         ],
                                       ),
                                     ),
@@ -2517,3 +2490,6 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
     );
   }
 }
+
+
+

@@ -76,7 +76,7 @@ class LiveChargingService {
         uri,
         headers: headers,
       ).timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 30),
         onTimeout: () {
           throw TimeoutException('Request timeout');
         },

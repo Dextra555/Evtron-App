@@ -275,18 +275,18 @@ class PdfService {
               ? invoiceData.company!.name!
               : 'ZEON ELECTRIC PRIVATE LIMITED';
           final companyAddress =
-              invoiceData.company?.address?.isNotEmpty == true
+          invoiceData.company?.address?.isNotEmpty == true
               ? invoiceData.company!.address!
               : '';
           final companyCityLine =
-              [
-                    invoiceData.company?.city,
-                    invoiceData.company?.state,
-                    invoiceData.company?.pincode,
-                  ]
-                  .where((value) => value != null && value!.isNotEmpty)
-                  .map((value) => value!)
-                  .join(', ');
+          [
+            invoiceData.company?.city,
+            invoiceData.company?.state,
+            invoiceData.company?.pincode,
+          ]
+              .where((value) => value != null && value!.isNotEmpty)
+              .map((value) => value!)
+              .join(', ');
           final companyGstin = (invoiceData.station.gstin.isNotEmpty
               ? invoiceData.station.gstin
               : invoiceData.gst.gstin.isNotEmpty
@@ -326,7 +326,7 @@ class PdfService {
                                 pw.Expanded(
                                   child: pw.Column(
                                     crossAxisAlignment:
-                                        pw.CrossAxisAlignment.start,
+                                    pw.CrossAxisAlignment.start,
                                     children: [
                                       pw.Row(
                                         children: [
@@ -407,8 +407,7 @@ class PdfService {
                 ],
               ),
 
-              pw.SizedBox(height: 18), // Space after first row
-              // SECOND ROW - Company and Billed To information
+              pw.SizedBox(height: 18),
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
@@ -433,14 +432,7 @@ class PdfService {
                               color: PdfColors.grey700,
                             ),
                           ),
-                        if (companyCityLine.isNotEmpty)
-                          pw.Text(
-                            companyCityLine,
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              color: PdfColors.grey700,
-                            ),
-                          ),
+
                         pw.SizedBox(height: 4),
                         pw.Text(
                           'GSTIN: $companyGstin',
@@ -473,31 +465,72 @@ class PdfService {
                           ),
                         ),
                         pw.SizedBox(height: 2),
-                        pw.Text(
-                          'BUSINESS NAME: ${invoiceData.user.businessName ?? 'NA'}',
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey900,
-                          ),
+                        pw.Row(
+                          children: [
+                            pw.Text(
+                              'BUSINESS NAME: ',
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.grey900,
+                              ),
+                            ),
+                            pw.Expanded(
+                              child: pw.Text(
+                                invoiceData.user.businessName ?? 'NA',
+                                style: pw.TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: pw.FontWeight.normal,
+                                  color: PdfColors.grey900,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         pw.SizedBox(height: 2),
-                        pw.Text(
-                          'ADDRESS: ${invoiceData.user.address ?? 'NA'}',
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey900,
-                          ),
+                        pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text(
+                              'ADDRESS: ',
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.grey900,
+                              ),
+                            ),
+                            pw.Expanded(
+                              child: pw.Text(
+                                invoiceData.user.address ?? 'NA',
+                                style: pw.TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: pw.FontWeight.normal,
+                                  color: PdfColors.grey900,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         pw.SizedBox(height: 2),
-                        pw.Text(
-                          'GSTIN: ${invoiceData.user.gstin ?? 'NA'}',
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey900,
-                          ),
+                        pw.Row(
+                          children: [
+                            pw.Text(
+                              'GSTIN: ',
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.grey900,
+                              ),
+                            ),
+                            pw.Text(
+                              invoiceData.user.gstin ?? 'NA',
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.normal,
+                                color: PdfColors.grey900,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -543,21 +576,45 @@ class PdfService {
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Text(
-                          'CHARGE POINT: ${invoiceData.charger}',
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey900,
-                          ),
+                        pw.Row(
+                          children: [
+                            pw.Text(
+                              'CHARGE POINT: ',
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.grey900,
+                              ),
+                            ),
+                            pw.Text(
+                              invoiceData.charger,
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.normal,
+                                color: PdfColors.grey900,
+                              ),
+                            ),
+                          ],
                         ),
-                        pw.Text(
-                          'CONNECTOR TYPE: ${invoiceData.connector}',
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey900,
-                          ),
+                        pw.Row(
+                          children: [
+                            pw.Text(
+                              'CONNECTOR TYPE: ',
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.grey900,
+                              ),
+                            ),
+                            pw.Text(
+                              invoiceData.connector,
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.normal,
+                                color: PdfColors.grey900,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -566,7 +623,6 @@ class PdfService {
               ),
               pw.SizedBox(height: 20),
 
-              // RESTRUCTURED TABLE - WITHOUT DIVIDER LINES
               pw.Container(
                 child: pw.Column(
                   children: [
@@ -736,6 +792,7 @@ class PdfService {
                     ),
 
                     // CGST ROW
+                    // CGST ROW
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(
                         vertical: 4,
@@ -750,7 +807,7 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                'CGST (9%):',
+                                'CGST (${invoiceData.gst.cgstRate}%):',
                                 style: pw.TextStyle(
                                   fontSize: 8,
                                   color: PdfColors.grey700,
@@ -775,7 +832,7 @@ class PdfService {
                       ),
                     ),
 
-                    // SGST ROW
+// SGST ROW
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(
                         vertical: 4,
@@ -790,7 +847,7 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                'SGST (9%):',
+                                'SGST (${invoiceData.gst.sgstRate}%):',
                                 style: pw.TextStyle(
                                   fontSize: 8,
                                   color: PdfColors.grey700,
@@ -865,24 +922,51 @@ class PdfService {
               pw.SizedBox(height: 16),
 
               // Payment Method
-              pw.Text(
-                'PAYMENT METHOD : ${invoiceData.payment.method.toUpperCase()}',
-                style: pw.TextStyle(
-                  fontSize: 12,
-                  fontWeight: pw.FontWeight.normal,
-                  color: PdfColors.grey700,
-                ),
+              // Payment Method
+              pw.Row(
+                children: [
+                  pw.Text(
+                    'PAYMENT METHOD : ',
+                    style: pw.TextStyle(
+                      fontSize: 12,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.grey700,
+                    ),
+                  ),
+                  pw.Text(
+                    invoiceData.payment.method.toUpperCase(),
+                    style: pw.TextStyle(
+                      fontSize: 12,
+                      fontWeight: pw.FontWeight.normal,
+                      color: PdfColors.grey700,
+                    ),
+                  ),
+                ],
               ),
               pw.SizedBox(height: 8),
 
-              // Amount in Words
-              pw.Text(
-                'AMOUNT IN WORDS : ${_numberToWords(invoiceData.billing.total)}',
-                style: pw.TextStyle(
-                  fontSize: 11,
-                  fontWeight: pw.FontWeight.normal,
-                  color: PdfColors.grey400,
-                ),
+// Amount in Words
+              pw.Row(
+                children: [
+                  pw.Text(
+                    'AMOUNT IN WORDS : ',
+                    style: pw.TextStyle(
+                      fontSize: 11,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.grey400,
+                    ),
+                  ),
+                  pw.Expanded(
+                    child: pw.Text(
+                      _numberToWords(invoiceData.billing.total),
+                      style: pw.TextStyle(
+                        fontSize: 11,
+                        fontWeight: pw.FontWeight.normal,
+                        color: PdfColors.grey400,
+                      ),
+                    ),
+                  ),
+                ],
               ),
 
               pw.SizedBox(height: 50),
@@ -933,11 +1017,11 @@ class PdfService {
   }
 
   static pw.Widget _buildTableDataCellWithTwoLines(
-    String line1,
-    String line2, {
-    int flex = 1,
-    pw.Alignment alignment = pw.Alignment.center,
-  }) {
+      String line1,
+      String line2, {
+        int flex = 1,
+        pw.Alignment alignment = pw.Alignment.center,
+      }) {
     return pw.Expanded(
       flex: flex,
       child: pw.Container(
@@ -961,10 +1045,10 @@ class PdfService {
   }
 
   static pw.Widget _buildTableHeaderCellWithoutDivider(
-    String text, {
-    int flex = 1,
-    pw.Alignment alignment = pw.Alignment.center,
-  }) {
+      String text, {
+        int flex = 1,
+        pw.Alignment alignment = pw.Alignment.center,
+      }) {
     return pw.Expanded(
       flex: flex,
       child: pw.Container(
@@ -985,11 +1069,11 @@ class PdfService {
   }
 
   static pw.Widget _buildTableDataCellWithoutDivider(
-    String text, {
-    int flex = 1,
-    bool isBold = false,
-    pw.Alignment alignment = pw.Alignment.centerLeft,
-  }) {
+      String text, {
+        int flex = 1,
+        bool isBold = false,
+        pw.Alignment alignment = pw.Alignment.centerLeft,
+      }) {
     return pw.Expanded(
       flex: flex,
       child: pw.Container(

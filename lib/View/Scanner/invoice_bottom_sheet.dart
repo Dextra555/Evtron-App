@@ -430,7 +430,8 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
       double amount,
       String currency, {
         bool isTotal = false,
-      }) {
+      })
+  {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -596,4 +597,5 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
     }
   }
 }
+
 

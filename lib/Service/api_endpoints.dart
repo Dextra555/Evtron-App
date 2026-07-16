@@ -42,8 +42,10 @@ class ApiEndpoints {
   static const String profile =
       "$baseUrl/profile";
 
-  static const String updateProfile =
-      "$baseUrl/profile/update";
+  // static const String updateProfile =
+  //     "$baseUrl/profile/update";
+
+  static const String updateProfile = "$baseUrl/update-profile";
 
   static const String bookings =
       "$baseUrl/bookings";

@@ -7,12 +7,20 @@ class EditProfileScreen extends StatefulWidget {
   final String name;
   final String phoneNumber;
   final String email;
+  final String? businessName;
+  final String? businessAddress;
+  final String? gstNumber;
+  final bool? companyProfile;
 
   const EditProfileScreen({
     super.key,
     required this.name,
     required this.phoneNumber,
     required this.email,
+    this.businessName,
+    this.businessAddress,
+    this.gstNumber,
+    this.companyProfile = false,
   });
 
   @override
@@ -31,18 +39,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   bool isDarkMode = false;
   bool isLoading = false;
-  bool isCustomerDetailsEnabled = false;
+  late bool isCustomerDetailsEnabled;
 
   @override
   void initState() {
     super.initState();
-    nameController = TextEditingController(text: widget.name);
-    phoneController = TextEditingController(text: widget.phoneNumber);
-    emailController = TextEditingController(text: widget.email);
+
+    nameController = TextEditingController();
+    phoneController = TextEditingController();
+    emailController = TextEditingController();
 
     businessNameController = TextEditingController();
     businessAddressController = TextEditingController();
     gstinController = TextEditingController();
+
+    isCustomerDetailsEnabled = false;
+
+    _loadProfile();
   }
 
   @override
@@ -50,7 +63,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     nameController.dispose();
     phoneController.dispose();
     emailController.dispose();
-
     businessNameController.dispose();
     businessAddressController.dispose();
     gstinController.dispose();
@@ -71,37 +83,81 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       name: nameController.text.trim(),
       email: emailController.text.trim(),
       phone: phoneController.text.trim(),
+      businessName:
+      isCustomerDetailsEnabled ? businessNameController.text.trim() : null,
+      address:
+      isCustomerDetailsEnabled ? businessAddressController.text.trim() : null,
+      gstNumber:
+      isCustomerDetailsEnabled ? gstinController.text.trim() : null,
+      companyProfile: isCustomerDetailsEnabled,
     );
 
-    final response = await _editProfileController.updateProfile(editProfileModel);
+    // First call UPDATE PROFILE API
+    final response =
+    await _editProfileController.updateProfile(editProfileModel);
 
-    if (mounted) {
+    if (!mounted) return;
+
+    if (response.success) {
+      // Fetch latest profile from server
+      await _loadProfile();
+
       setState(() {
         isLoading = false;
       });
 
-      if (response.success) {
-        _showMessage(response.message, Colors.green);
+      _showMessage(response.message, Colors.green);
 
-        // Navigate back with updated data
-        Navigator.pop(context, {
-          'name': nameController.text.trim(),
-          'phone': phoneController.text.trim(),
-          'email': emailController.text.trim(),
+      Navigator.pop(context, {
+        'name': nameController.text.trim(),
+        'phone': phoneController.text.trim(),
+        'email': emailController.text.trim(),
+        'business_name': isCustomerDetailsEnabled
+            ? businessNameController.text.trim()
+            : null,
+        'address': isCustomerDetailsEnabled
+            ? businessAddressController.text.trim()
+            : null,
+        'gst_number': isCustomerDetailsEnabled
+            ? gstinController.text.trim()
+            : null,
+        'company_profile': isCustomerDetailsEnabled,
+      });
+    } else {
+      setState(() {
+        isLoading = false;
+      });
+
+      _showMessage(response.message, Colors.red);
+
+      if (response.message.contains('Session expired')) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              '/login',
+                  (route) => false,
+            );
+          }
         });
-      } else {
-        _showMessage(response.message, Colors.red);
-
-        // Redirect to login if session expired
-        if (response.message.contains('Session expired')) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-            }
-          });
-        }
       }
     }
+  }
+
+  Future<void> _loadProfile() async {
+    final profile = await _editProfileController.fetchProfile();
+
+    if (!mounted || profile == null) return;
+
+    setState(() {
+      nameController.text = profile['name'] ?? '';
+      phoneController.text = profile['phone'] ?? '';
+      emailController.text = profile['email'] ?? '';
+      businessNameController.text = profile['business_name'] ?? '';
+      businessAddressController.text = profile['address'] ?? '';
+      gstinController.text = profile['gst_number'] ?? '';
+      isCustomerDetailsEnabled = profile['company_profile'] ?? false;
+    });
   }
 
   bool _validateInputs() {
@@ -125,6 +181,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!regExp.hasMatch(emailController.text.trim())) {
       _showMessage("Please enter a valid email address", Colors.red);
       return false;
+    }
+
+    // Validate GST if checkbox is enabled and GST is entered
+    if (isCustomerDetailsEnabled) {
+      if (businessNameController.text.trim().isEmpty) {
+        _showMessage("Please enter your business name", Colors.red);
+        return false;
+      }
+
+      if (businessAddressController.text.trim().isEmpty) {
+        _showMessage("Please enter your business address", Colors.red);
+        return false;
+      }
+
+      if (gstinController.text.trim().isNotEmpty) {
+        String gstPattern = r'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$';
+        RegExp gstRegExp = RegExp(gstPattern);
+        if (!gstRegExp.hasMatch(gstinController.text.trim().toUpperCase())) {
+          _showMessage("Please enter a valid GSTIN number", Colors.red);
+          return false;
+        }
+      }
     }
 
     return true;
@@ -216,23 +294,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               // Customer Details Section with checkbox on right
               _buildCustomerDetailsSection(),
 
-              const SizedBox(height: 20),
-              _buildTextField(
-                controller: businessNameController,
-                label: "Business Name",
-                hint: "Enter your business name",
-                icon: Icons.business_outlined,
-              ),
-              const SizedBox(height: 20),
-              _buildTextField(
-                controller: businessAddressController,
-                label: "Business Address",
-                hint: "Enter your business address",
-                icon: Icons.location_on_outlined,
-                maxLines: 3,
-              ),
-              const SizedBox(height: 20),
-              _buildGSTINField(),
+              // Only show business fields if checkbox is enabled
+              if (isCustomerDetailsEnabled) ...[
+                const SizedBox(height: 20),
+                _buildTextField(
+                  controller: businessNameController,
+                  label: "Business Name",
+                  hint: "Enter your business name",
+                  icon: Icons.business_outlined,
+                ),
+                const SizedBox(height: 20),
+                _buildTextField(
+                  controller: businessAddressController,
+                  label: "Business Address",
+                  hint: "Enter your business address",
+                  icon: Icons.location_on_outlined,
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 20),
+                _buildGSTINField(),
+              ],
               const SizedBox(height: 30),
             ],
           ),
@@ -243,7 +324,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  // Updated Customer Details section with checkbox on right - removed divider line
   Widget _buildCustomerDetailsSection() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -258,26 +338,51 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               color: isDarkMode ? Colors.white : Colors.black,
             ),
           ),
-          Checkbox(
-            value: isCustomerDetailsEnabled,
-            onChanged: (bool? value) {
-              setState(() {
-                isCustomerDetailsEnabled = value ?? false;
-              });
-            },
-            activeColor: Colors.green,
-            checkColor: Colors.white,
-            side: BorderSide(
-              color: isDarkMode ? Colors.grey[400]! : Colors.grey[600]!,
-              width: 2,
-            ),
+          Row(
+            children: [
+              if (isCustomerDetailsEnabled)
+                Text(
+                  "Active",
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.green,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              const SizedBox(width: 8),
+              Checkbox(
+                value: isCustomerDetailsEnabled,
+                onChanged: (bool? value) {
+                  setState(() {
+                    isCustomerDetailsEnabled = value ?? false;
+                    // Keep the data if unchecked - don't clear, just hide
+                    // Only clear if you want to reset the fields when unchecked
+                    if (!isCustomerDetailsEnabled) {
+                      // Option 1: Clear the fields when unchecked
+                      // businessNameController.clear();
+                      // businessAddressController.clear();
+                      // gstinController.clear();
+
+                      // Option 2: Keep the data but hide the fields (recommended)
+                      // This way if user checks again, their data is still there
+                      // No need to clear
+                    }
+                  });
+                },
+                activeColor: Colors.green,
+                checkColor: Colors.white,
+                side: BorderSide(
+                  color: isDarkMode ? Colors.grey[400]! : Colors.grey[600]!,
+                  width: 2,
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  // New method for Save button at bottom
   Widget _buildSaveButton() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -353,6 +458,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
           keyboardType: keyboardType,
           maxLines: maxLines,
+          enabled: isCustomerDetailsEnabled ||
+              (label != "Business Name" &&
+                  label != "Business Address" &&
+                  label != "GSTIN Number"),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: GoogleFonts.poppins(
@@ -405,6 +514,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             letterSpacing: 1.2,
             color: isDarkMode ? Colors.white : Colors.black,
           ),
+          enabled: isCustomerDetailsEnabled,
           decoration: InputDecoration(
             hintText: "22AAAAA0000A1Z5",
             hintStyle: GoogleFonts.poppins(
@@ -419,17 +529,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide(
-                color: isDarkMode
-                    ? Colors.grey[800]!
-                    : Colors.grey[300]!,
+                color: isDarkMode ? Colors.grey[800]! : Colors.grey[300]!,
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide(
-                color: isDarkMode
-                    ? Colors.grey[800]!
-                    : Colors.grey[300]!,
+                color: isDarkMode ? Colors.grey[800]! : Colors.grey[300]!,
               ),
             ),
             focusedBorder: OutlineInputBorder(

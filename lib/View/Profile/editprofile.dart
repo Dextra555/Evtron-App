@@ -31,6 +31,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   bool isDarkMode = false;
   bool isLoading = false;
+  bool isCustomerDetailsEnabled = false;
 
   @override
   void initState() {
@@ -177,85 +178,150 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
       ),
       centerTitle: true,
-      actions: [
-        TextButton(
-          onPressed: isLoading ? null : _saveProfile,
-          child: isLoading
-              ? SizedBox(
-            height: 20,
-            width: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
-            ),
-          )
-              : Text(
-            "Save",
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.green,
-            ),
-          ),
-        ),
-      ],
     );
   }
 
   Widget _buildForm() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return Column(
       children: [
-        const SizedBox(height: 30),
-        _buildTextField(
-          controller: nameController,
-          label: "Full Name",
-          hint: "Enter your full name",
-          icon: Icons.person_outline,
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const SizedBox(height: 10),
+              _buildTextField(
+                controller: nameController,
+                label: "Full Name",
+                hint: "Enter your full name",
+                icon: Icons.person_outline,
+              ),
+              const SizedBox(height: 20),
+              _buildTextField(
+                controller: phoneController,
+                label: "Phone Number",
+                hint: "Enter your phone number",
+                icon: Icons.phone_outlined,
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 20),
+              _buildTextField(
+                controller: emailController,
+                label: "Email Address",
+                hint: "Enter your email address",
+                icon: Icons.email_outlined,
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 30),
+
+              // Customer Details Section with checkbox on right
+              _buildCustomerDetailsSection(),
+
+              const SizedBox(height: 20),
+              _buildTextField(
+                controller: businessNameController,
+                label: "Business Name",
+                hint: "Enter your business name",
+                icon: Icons.business_outlined,
+              ),
+              const SizedBox(height: 20),
+              _buildTextField(
+                controller: businessAddressController,
+                label: "Business Address",
+                hint: "Enter your business address",
+                icon: Icons.location_on_outlined,
+                maxLines: 3,
+              ),
+              const SizedBox(height: 20),
+              _buildGSTINField(),
+              const SizedBox(height: 30),
+            ],
+          ),
         ),
-        const SizedBox(height: 20),
-        _buildTextField(
-          controller: phoneController,
-          label: "Phone Number",
-          hint: "Enter your phone number",
-          icon: Icons.phone_outlined,
-          keyboardType: TextInputType.phone,
-        ),
-        const SizedBox(height: 20),
-        _buildTextField(
-          controller: emailController,
-          label: "Email Address",
-          hint: "Enter your email address",
-          icon: Icons.email_outlined,
-          keyboardType: TextInputType.emailAddress,
-        ),
-        const SizedBox(height: 30),
-
-        _buildTextField(
-          controller: businessNameController,
-          label: "Business Name",
-          hint: "Enter your business name",
-          icon: Icons.business_outlined,
-        ),
-
-        const SizedBox(height: 20),
-
-        _buildTextField(
-          controller: businessAddressController,
-          label: "Business Address",
-          hint: "Enter your business address",
-          icon: Icons.location_on_outlined,
-          maxLines: 3,
-        ),
-
-        const SizedBox(height: 20),
-
-        _buildGSTINField(),
-
-        const SizedBox(height: 30),
-
-
+        // Save Button at bottom
+        _buildSaveButton(),
       ],
+    );
+  }
+
+  // Updated Customer Details section with checkbox on right - removed divider line
+  Widget _buildCustomerDetailsSection() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            "Customer Details",
+            style: GoogleFonts.poppins(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: isDarkMode ? Colors.white : Colors.black,
+            ),
+          ),
+          Checkbox(
+            value: isCustomerDetailsEnabled,
+            onChanged: (bool? value) {
+              setState(() {
+                isCustomerDetailsEnabled = value ?? false;
+              });
+            },
+            activeColor: Colors.green,
+            checkColor: Colors.white,
+            side: BorderSide(
+              color: isDarkMode ? Colors.grey[400]! : Colors.grey[600]!,
+              width: 2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // New method for Save button at bottom
+  Widget _buildSaveButton() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.black : Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: ElevatedButton(
+          onPressed: isLoading ? null : _saveProfile,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            elevation: 0,
+          ),
+          child: isLoading
+              ? const SizedBox(
+            height: 24,
+            width: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          )
+              : Text(
+            "Save Profile",
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -266,8 +332,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     required IconData icon,
     TextInputType? keyboardType,
     int maxLines = 1,
-  })
-  {
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -287,6 +352,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             color: isDarkMode ? Colors.white : Colors.black,
           ),
           keyboardType: keyboardType,
+          maxLines: maxLines,
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: GoogleFonts.poppins(
@@ -316,7 +382,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ],
     );
   }
-
 
   Widget _buildGSTINField() {
     return Column(

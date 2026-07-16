@@ -254,11 +254,11 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const SizedBox(width: 44),
+        const SizedBox(width: 40),
         Text(
           "Invoice Details",
           style: GoogleFonts.poppins(
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: FontWeight.bold,
             color: Appcolor.black,
           ),

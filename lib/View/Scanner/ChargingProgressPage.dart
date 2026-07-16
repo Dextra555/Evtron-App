@@ -48,6 +48,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
   bool _isRecovering = false;
   bool _isLoadingDialogShowing = false;
   bool _isInvoiceSheetShowing = false;
+  bool _invoiceFetchCompleted = false;
   bool _isHandlingNetworkInterruption = false;
   bool _retryLoopActive = false;
   StreamSubscription? _connectivitySubscription;
@@ -483,6 +484,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
   }
 
   void _hideLoadingDialog() {
+    if (!_isLoadingDialogShowing) return;
     _isLoadingDialogShowing = false;
     if (_isMounted) {
       try {
@@ -499,6 +501,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
 
   void _showInvoiceBottomSheet() {
     if (_isInvoiceSheetShowing) return;
+    _invoiceFetchCompleted = false;
     _isInvoiceSheetShowing = true;
 
     showModalBottomSheet(
@@ -539,24 +542,49 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
           ),
         );
       },
-    ).then((_) {
-      _isInvoiceSheetShowing = false;
-    });
+    );
 
     // Fetch invoice data with retry
     _fetchInvoiceData(maxRetries: 15, retryDelaySeconds: 2).then((_) {
-      if (!_isMounted) return;
-
+      _invoiceFetchCompleted = true;
       // Close the loading bottom sheet
-      Navigator.pop(context);
+      try {
+        if (_isMounted) {
+          Navigator.pop(context);
+          // Small delay to let Navigator settle before pushing new route
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (_isMounted) {
+              _showInvoiceSheet();
+            }
+          });
+          return;
+        }
+      } catch (e) {
+        print('⚠️ Could not close loading sheet: $e');
+      }
 
-      // Show the actual invoice sheet
+      // If pop failed or widget unmounted, still try to show invoice
+      _showInvoiceSheet();
+    }).catchError((error) {
+      _invoiceFetchCompleted = true;
+      print('❌ Invoice fetch error: $error');
+      try { if (_isMounted) Navigator.pop(context); } catch (_) {}
+      _showInvoiceSheet();
+    });
+
+    // Safety timeout: if invoice fetch takes >30s, force close loading sheet
+    Future.delayed(const Duration(seconds: 30), () {
+      if (!_isMounted || _invoiceFetchCompleted) return;
+      print('⏰ Invoice fetch timeout - force showing invoice sheet');
+      try { if (_isMounted) Navigator.pop(context); } catch (_) {}
       _showInvoiceSheet();
     });
   }
 
   void _showInvoiceSheet() {
     if (!_isMounted) return;
+    // If invoice sheet is already showing, don't show another one
+    if (_isInvoiceSheetShowing) return;
 
     _isInvoiceSheetShowing = true;
 

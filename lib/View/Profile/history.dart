@@ -254,13 +254,13 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
           children: [
             Icon(
               Icons.history,
-              size: 64,
+              size: 50,
               color: Colors.grey[400],
             ),
             const SizedBox(height: 16),
             Text(
               controller.errorMessage != null
-                  ? "Error: ${controller.errorMessage}"
+                  ? " ${controller.errorMessage}"
                   : "No Charging History Found",
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(

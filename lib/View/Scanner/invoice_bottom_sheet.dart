@@ -133,6 +133,7 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
+              physics: const BouncingScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -208,7 +209,6 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
                       'SGST',
                       '${invoiceData.billing.currency} ${invoiceData.gst.sgstAmount.toStringAsFixed(2)}',
                     ),
-
                     _buildInfoRow(
                       'Total GST',
                       '${invoiceData.billing.currency} ${invoiceData.gst.totalGst.toStringAsFixed(2)}',
@@ -276,33 +276,41 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
 
   Widget _buildInvoiceHeader(InvoiceData invoiceData) {
     return Container(
+      width: double.infinity, // Ensure it takes full width
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Appcolor.green.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Invoice #${invoiceData.invoiceNumber}',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Appcolor.black,
+          // Left side - Invoice info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Invoice #${invoiceData.invoiceNumber}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Appcolor.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
-              ),
-              Text(
-                'Date: ${_formatDateOnly(invoiceData.invoiceDate)}',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
+                const SizedBox(height: 4),
+                Text(
+                  'Date: ${_formatDateOnly(invoiceData.invoiceDate)}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -311,6 +319,7 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
 
   Widget _buildInfoSection(String title, List<Widget> children) {
     return Container(
+      width: double.infinity, // Ensure full width
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         border: Border.all(color: Appcolor.borderGrey),
@@ -338,15 +347,20 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              color: Colors.grey.shade600,
+          // Label with flexible width
+          SizedBox(
+            width: 100, // Fixed width for label
+            child: Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
+          // Value with expanded space
           Expanded(
             child: Text(
               value,
@@ -356,6 +370,8 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
                 color: Appcolor.black,
               ),
               textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
             ),
           ),
         ],
@@ -365,6 +381,7 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
 
   Widget _buildCostBreakdown(InvoiceData invoiceData) {
     return Container(
+      width: double.infinity, // Ensure full width
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Appcolor.lightGrey,
@@ -430,27 +447,35 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
       double amount,
       String currency, {
         bool isTotal = false,
-      })
-  {
+      }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: isTotal ? 14 : 13,
-              fontWeight: isTotal ? FontWeight.w600 : FontWeight.normal,
-              color: isTotal ? Appcolor.black : Colors.grey.shade700,
+          // Label with flexible width
+          SizedBox(
+            width: 120, // Fixed width for label
+            child: Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: isTotal ? 14 : 13,
+                fontWeight: isTotal ? FontWeight.w600 : FontWeight.normal,
+                color: isTotal ? Appcolor.black : Colors.grey.shade700,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          Text(
-            '$currency ${amount.toStringAsFixed(2)}',
-            style: GoogleFonts.poppins(
-              fontSize: isTotal ? 16 : 13,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-              color: isTotal ? Appcolor.green : Appcolor.black,
+          // Value with expanded space
+          Expanded(
+            child: Text(
+              '$currency ${amount.toStringAsFixed(2)}',
+              style: GoogleFonts.poppins(
+                fontSize: isTotal ? 16 : 13,
+                fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+                color: isTotal ? Appcolor.green : Appcolor.black,
+              ),
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -597,5 +622,4 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
     }
   }
 }
-
 

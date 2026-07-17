@@ -547,11 +547,14 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
     // Fetch invoice data with retry
     _fetchInvoiceData(maxRetries: 15, retryDelaySeconds: 2).then((_) {
       _invoiceFetchCompleted = true;
-      // Close the loading bottom sheet
+
       try {
         if (_isMounted) {
-          Navigator.pop(context);
-          // Small delay to let Navigator settle before pushing new route
+          Navigator.pop(context); // close loading bottom sheet
+
+          // IMPORTANT: reset flag before opening invoice sheet
+          _isInvoiceSheetShowing = false;
+
           Future.delayed(const Duration(milliseconds: 300), () {
             if (_isMounted) {
               _showInvoiceSheet();
@@ -563,20 +566,30 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
         print('⚠️ Could not close loading sheet: $e');
       }
 
-      // If pop failed or widget unmounted, still try to show invoice
+      // fallback
+      _isInvoiceSheetShowing = false;
       _showInvoiceSheet();
     }).catchError((error) {
       _invoiceFetchCompleted = true;
-      print('❌ Invoice fetch error: $error');
-      try { if (_isMounted) Navigator.pop(context); } catch (_) {}
+
+      try {
+        if (_isMounted) Navigator.pop(context);
+      } catch (_) {}
+
+      // IMPORTANT: reset flag before opening invoice sheet
+      _isInvoiceSheetShowing = false;
       _showInvoiceSheet();
     });
 
-    // Safety timeout: if invoice fetch takes >30s, force close loading sheet
+
     Future.delayed(const Duration(seconds: 30), () {
       if (!_isMounted || _invoiceFetchCompleted) return;
-      print('⏰ Invoice fetch timeout - force showing invoice sheet');
-      try { if (_isMounted) Navigator.pop(context); } catch (_) {}
+
+      try {
+        if (_isMounted) Navigator.pop(context);
+      } catch (_) {}
+
+      _isInvoiceSheetShowing = false;
       _showInvoiceSheet();
     });
   }

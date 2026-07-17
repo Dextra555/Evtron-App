@@ -273,7 +273,7 @@ class PdfService {
           // Get company name or use default static name
           final companyName = invoiceData.company?.name?.isNotEmpty == true
               ? invoiceData.company!.name!
-              : 'ZEON ELECTRIC PRIVATE LIMITED';
+              : '';
           final companyAddress =
           invoiceData.company?.address?.isNotEmpty == true
               ? invoiceData.company!.address!
@@ -297,107 +297,10 @@ class PdfService {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               // FIRST ROW - Logo and TAX INVOICE with spacing
+              // FIRST ROW - Only Logo (right aligned)
               pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                mainAxisAlignment: pw.MainAxisAlignment.end,
                 children: [
-                  // Left side - TAX INVOICE text with spacing
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'TAX INVOICE',
-                        style: pw.TextStyle(
-                          fontSize: 26,
-                          fontWeight: pw.FontWeight.bold,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      pw.SizedBox(height: 8), // Space after TAX INVOICE
-                      // Invoice details in a separate row below
-                      pw.Container(
-                        width: 220,
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Row(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Expanded(
-                                  child: pw.Column(
-                                    crossAxisAlignment:
-                                    pw.CrossAxisAlignment.start,
-                                    children: [
-                                      pw.Row(
-                                        children: [
-                                          pw.Text(
-                                            'INVOICE DATE',
-                                            style: pw.TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: pw.FontWeight.bold,
-                                              color: PdfColors.grey800,
-                                            ),
-                                          ),
-                                          pw.Text(
-                                            ' : ${_formatDateOnly(invoiceData.invoiceDate)}',
-                                            style: pw.TextStyle(
-                                              fontSize: 10,
-                                              color: PdfColors.grey700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      pw.SizedBox(height: 4),
-                                      pw.Row(
-                                        children: [
-                                          pw.Text(
-                                            'INVOICE NUMBER',
-                                            style: pw.TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: pw.FontWeight.bold,
-                                              color: PdfColors.grey800,
-                                            ),
-                                          ),
-                                          pw.Text(
-                                            ' : ${invoiceData.invoiceNumber}',
-                                            style: pw.TextStyle(
-                                              fontSize: 10,
-                                              color: PdfColors.grey700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      pw.SizedBox(height: 4),
-                                      pw.Row(
-                                        children: [
-                                          pw.Text(
-                                            'TRANSACTION ID',
-                                            style: pw.TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: pw.FontWeight.bold,
-                                              color: PdfColors.grey800,
-                                            ),
-                                          ),
-                                          pw.Text(
-                                            ' : ${invoiceData.tid ?? invoiceData.payment.receiptNumber ?? 'N/A'}',
-                                            style: pw.TextStyle(
-                                              fontSize: 10,
-                                              color: PdfColors.grey700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  // Right side - Logo
                   if (logoImage != null)
                     pw.Container(
                       width: 120,
@@ -405,6 +308,101 @@ class PdfService {
                       child: pw.Image(logoImage, fit: pw.BoxFit.contain),
                     ),
                 ],
+              ),
+
+              pw.SizedBox(height: 8), // Space between logo and TAX INVOICE
+
+// SECOND ROW - TAX INVOICE text
+              pw.Text(
+                'TAX INVOICE',
+                style: pw.TextStyle(
+                  fontSize: 26,
+                  fontWeight: pw.FontWeight.bold,
+                  letterSpacing: 1.5,
+                ),
+              ),
+
+              pw.SizedBox(height: 18), // Space after TAX INVOICE
+
+// THIRD ROW - Invoice details
+              pw.Container(
+                width: 220,
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Expanded(
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Row(
+                                children: [
+                                  pw.Text(
+                                    'INVOICE DATE',
+                                    style: pw.TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: PdfColors.grey800,
+                                    ),
+                                  ),
+                                  pw.Text(
+                                    ' : ${_formatDateOnly(invoiceData.invoiceDate)}',
+                                    style: pw.TextStyle(
+                                      fontSize: 10,
+                                      color: PdfColors.grey700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              pw.SizedBox(height: 4),
+                              pw.Row(
+                                children: [
+                                  pw.Text(
+                                    'INVOICE NUMBER',
+                                    style: pw.TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: PdfColors.grey800,
+                                    ),
+                                  ),
+                                  pw.Text(
+                                    ' : ${invoiceData.invoiceNumber}',
+                                    style: pw.TextStyle(
+                                      fontSize: 10,
+                                      color: PdfColors.grey700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              pw.SizedBox(height: 4),
+                              pw.Row(
+                                children: [
+                                  pw.Text(
+                                    'TRANSACTION ID',
+                                    style: pw.TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: PdfColors.grey800,
+                                    ),
+                                  ),
+                                  pw.Text(
+                                    ' : ${invoiceData.tid ?? invoiceData.payment.receiptNumber ?? 'N/A'}',
+                                    style: pw.TextStyle(
+                                      fontSize: 10,
+                                      color: PdfColors.grey700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
 
               pw.SizedBox(height: 18),
@@ -433,7 +431,7 @@ class PdfService {
                             ),
                           ),
 
-                        pw.SizedBox(height: 4),
+                        pw.SizedBox(height: 2),
                         pw.Text(
                           'GSTIN: $companyGstin',
                           style: pw.TextStyle(
@@ -444,7 +442,7 @@ class PdfService {
                       ],
                     ),
                   ),
-                  pw.SizedBox(width: 16),
+                  pw.SizedBox(width: 30),
                   pw.Expanded(
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -574,6 +572,7 @@ class PdfService {
                       ],
                     ),
                   ),
+                  pw.SizedBox(width: 30),
                   pw.Expanded(
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -940,7 +939,7 @@ class PdfService {
                     style: pw.TextStyle(
                       fontSize: 10,
                       fontWeight: pw.FontWeight.normal,
-                      color: PdfColors.grey700,
+                      color: PdfColors.grey800,
                     ),
                   ),
                 ],

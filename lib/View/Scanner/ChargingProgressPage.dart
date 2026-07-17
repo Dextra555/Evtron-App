@@ -542,7 +542,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
           ),
         );
       },
-    );
+    ).then((_) {
+      _isInvoiceSheetShowing = false;
+    });
 
     // Fetch invoice data with retry
     _fetchInvoiceData(maxRetries: 15, retryDelaySeconds: 2).then((_) {
@@ -554,6 +556,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
           // Small delay to let Navigator settle before pushing new route
           Future.delayed(const Duration(milliseconds: 300), () {
             if (_isMounted) {
+              _isInvoiceSheetShowing = false;
               _showInvoiceSheet();
             }
           });
@@ -564,10 +567,12 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
       }
 
       // If pop failed or widget unmounted, still try to show invoice
+      _isInvoiceSheetShowing = false;
       _showInvoiceSheet();
     }).catchError((error) {
       _invoiceFetchCompleted = true;
       print('❌ Invoice fetch error: $error');
+      _isInvoiceSheetShowing = false;
       try { if (_isMounted) Navigator.pop(context); } catch (_) {}
       _showInvoiceSheet();
     });
@@ -576,6 +581,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
     Future.delayed(const Duration(seconds: 30), () {
       if (!_isMounted || _invoiceFetchCompleted) return;
       print('⏰ Invoice fetch timeout - force showing invoice sheet');
+      _isInvoiceSheetShowing = false;
       try { if (_isMounted) Navigator.pop(context); } catch (_) {}
       _showInvoiceSheet();
     });
@@ -583,32 +589,37 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
 
   void _showInvoiceSheet() {
     if (!_isMounted) return;
-    // If invoice sheet is already showing, don't show another one
     if (_isInvoiceSheetShowing) return;
 
     _isInvoiceSheetShowing = true;
+    print('📋 Showing invoice bottom sheet');
 
-    showModalBottomSheet(
-      context: context,
-      isDismissible: true,
-      enableDrag: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext context) {
-        return InvoiceBottomSheet(
-          invoiceController: _invoiceController,
-          onClosed: () {
-            _isInvoiceSheetShowing = false;
-            _navigateToScanner();
-          },
-        );
-      },
-    ).then((_) {
+    try {
+      showModalBottomSheet(
+        context: context,
+        isDismissible: true,
+        enableDrag: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (BuildContext context) {
+          return InvoiceBottomSheet(
+            invoiceController: _invoiceController,
+            onClosed: () {
+              _isInvoiceSheetShowing = false;
+              _navigateToScanner();
+            },
+          );
+        },
+      ).then((_) {
+        _isInvoiceSheetShowing = false;
+        if (_isMounted) {
+          _navigateToScanner();
+        }
+      });
+    } catch (e) {
+      print('❌ Error showing invoice sheet: $e');
       _isInvoiceSheetShowing = false;
-      if (_isMounted) {
-        _navigateToScanner();
-      }
-    });
+    }
   }
 
   void _showNetworkInterruptedDialog() {

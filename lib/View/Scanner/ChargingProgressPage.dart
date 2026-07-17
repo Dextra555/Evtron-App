@@ -542,7 +542,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
           ),
         );
       },
-    );
+    ).then((_) {
+      _isInvoiceSheetShowing = false;
+    });
 
     // Fetch invoice data with retry
     _fetchInvoiceData(maxRetries: 15, retryDelaySeconds: 2).then((_) {
@@ -557,6 +559,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
 
           Future.delayed(const Duration(milliseconds: 300), () {
             if (_isMounted) {
+              _isInvoiceSheetShowing = false;
               _showInvoiceSheet();
             }
           });
@@ -566,11 +569,16 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
         print('⚠️ Could not close loading sheet: $e');
       }
 
+<<<<<<< HEAD
       // fallback
+=======
+      // If pop failed or widget unmounted, still try to show invoice
+>>>>>>> 29968810058fc1a02a8f3f380e6789aa198409c8
       _isInvoiceSheetShowing = false;
       _showInvoiceSheet();
     }).catchError((error) {
       _invoiceFetchCompleted = true;
+<<<<<<< HEAD
 
       try {
         if (_isMounted) Navigator.pop(context);
@@ -578,50 +586,66 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
 
       // IMPORTANT: reset flag before opening invoice sheet
       _isInvoiceSheetShowing = false;
+=======
+      print('❌ Invoice fetch error: $error');
+      _isInvoiceSheetShowing = false;
+      try { if (_isMounted) Navigator.pop(context); } catch (_) {}
+>>>>>>> 29968810058fc1a02a8f3f380e6789aa198409c8
       _showInvoiceSheet();
     });
 
 
     Future.delayed(const Duration(seconds: 30), () {
       if (!_isMounted || _invoiceFetchCompleted) return;
+<<<<<<< HEAD
 
       try {
         if (_isMounted) Navigator.pop(context);
       } catch (_) {}
 
       _isInvoiceSheetShowing = false;
+=======
+      print('⏰ Invoice fetch timeout - force showing invoice sheet');
+      _isInvoiceSheetShowing = false;
+      try { if (_isMounted) Navigator.pop(context); } catch (_) {}
+>>>>>>> 29968810058fc1a02a8f3f380e6789aa198409c8
       _showInvoiceSheet();
     });
   }
 
   void _showInvoiceSheet() {
     if (!_isMounted) return;
-    // If invoice sheet is already showing, don't show another one
     if (_isInvoiceSheetShowing) return;
 
     _isInvoiceSheetShowing = true;
+    print('📋 Showing invoice bottom sheet');
 
-    showModalBottomSheet(
-      context: context,
-      isDismissible: true,
-      enableDrag: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext context) {
-        return InvoiceBottomSheet(
-          invoiceController: _invoiceController,
-          onClosed: () {
-            _isInvoiceSheetShowing = false;
-            _navigateToScanner();
-          },
-        );
-      },
-    ).then((_) {
+    try {
+      showModalBottomSheet(
+        context: context,
+        isDismissible: true,
+        enableDrag: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (BuildContext context) {
+          return InvoiceBottomSheet(
+            invoiceController: _invoiceController,
+            onClosed: () {
+              _isInvoiceSheetShowing = false;
+              _navigateToScanner();
+            },
+          );
+        },
+      ).then((_) {
+        _isInvoiceSheetShowing = false;
+        if (_isMounted) {
+          _navigateToScanner();
+        }
+      });
+    } catch (e) {
+      print('❌ Error showing invoice sheet: $e');
       _isInvoiceSheetShowing = false;
-      if (_isMounted) {
-        _navigateToScanner();
-      }
-    });
+    }
   }
 
   void _showNetworkInterruptedDialog() {

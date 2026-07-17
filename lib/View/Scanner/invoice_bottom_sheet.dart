@@ -21,6 +21,22 @@ class InvoiceBottomSheet extends StatefulWidget {
 
 class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
   @override
+  void initState() {
+    super.initState();
+    widget.invoiceController.addListener(_onInvoiceChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.invoiceController.removeListener(_onInvoiceChanged);
+    super.dispose();
+  }
+
+  void _onInvoiceChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final invoiceData = widget.invoiceController.invoiceResponse?.data;
 

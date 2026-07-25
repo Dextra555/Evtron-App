@@ -467,7 +467,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
               width: 1,
             ),
           ),
-          child: TextFormField(
+          child:
+          TextFormField(
             controller: controller,
             obscureText: obscureText,
             keyboardType: keyboardType,
@@ -475,6 +476,12 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
               fontSize: 14,
               color: Appcolor.black,
             ),
+            inputFormatters: keyboardType == TextInputType.phone
+                ? [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(10),
+            ]
+                : null,
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: GoogleFonts.poppins(

@@ -152,7 +152,6 @@ class PdfReceiptService {
     );
   }
 
-  // Print PDF
   static Future<void> printPdf(File file) async {
     final pdfData = await file.readAsBytes();
     await Printing.layoutPdf(
@@ -233,13 +232,7 @@ class PdfReceiptService {
             decoration: pw.BoxDecoration(
               color: PdfColors.white,
               borderRadius: pw.BorderRadius.circular(28),
-              boxShadow: [
-                pw.BoxShadow(
-                  color: PdfColor.fromInt(0x1A000000),
-                  blurRadius: 18,
-                  offset: PdfPoint(0, 8),
-                ),
-              ],
+
             ),
             padding: pw.EdgeInsets.all(28),
             child: pw.Column(
@@ -249,36 +242,7 @@ class PdfReceiptService {
                   child: pw.Column(
                     children: [
                       _buildModernLogo(logoImage),
-                      pw.SizedBox(height: 16),
-                      pw.Text(
-                        'EVtron',
-                        style: pw.TextStyle(
-                          font: unicodeFont,
-                          fontSize: 24,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromInt(0xFF2E7D32),
-                        ),
-                      ),
-                      pw.SizedBox(height: 8),
-                      pw.Text(
-                        'PAYMENT RECEIPT',
-                        style: pw.TextStyle(
-                          font: unicodeFont,
-                          fontSize: 16,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromInt(0xFF1F2937),
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      pw.SizedBox(height: 6),
-                      pw.Text(
-                        receiptNumber,
-                        style: pw.TextStyle(
-                          font: unicodeFont,
-                          fontSize: 10,
-                          color: PdfColor.fromInt(0xFF6B7280),
-                        ),
-                      ),
+
                     ],
                   ),
                 ),
@@ -362,15 +326,7 @@ class PdfReceiptService {
                 pw.Center(
                   child: pw.Column(
                     children: [
-                      pw.Text(
-                        'Thank you for choosing EVTRON!',
-                        style: pw.TextStyle(
-                          font: unicodeFont,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromInt(0xFF166534),
-                        ),
-                      ),
+
                       pw.SizedBox(height: 4),
                       pw.Text(
                         'This is a system-generated receipt',

@@ -124,26 +124,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------- Existing Profile Methods ----------
   Future<void> _loadUserProfile() async {
     setState(() {
       _isLoading = true;
     });
 
-    final userProfile = await _profileController.fetchUserProfile();
+    try {
+      final userProfile = await _profileController.fetchUserProfile();
 
-    if (mounted) {
+      if (!mounted) return;
+
       setState(() {
         _userProfile = userProfile;
         _isLoading = false;
       });
 
-      if (userProfile != null) {
-        _showSuccessMessage('Profile loaded successfully');
-      } else {
-        _showErrorMessage('Failed to load profile');
-        _redirectToLogin();
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      final error = e.toString();
+
+      if (error.contains("NO_INTERNET")) {
+        _showErrorMessage("Please check your internet connection.");
+        return; // Stay on Profile page
       }
+
+      if (error.contains("UNAUTHORIZED")) {
+        _redirectToLogin();
+        return;
+      }
+
+      _showErrorMessage("Failed to load profile.");
     }
   }
 

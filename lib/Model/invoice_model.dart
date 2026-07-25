@@ -116,7 +116,6 @@ class InvoiceData {
 
   factory InvoiceData.fromJson(Map<String, dynamic> json) {
     final data = _asMap(json);
-
     final sessionData = _asMap(data['session']);
     final transactionId = _asNullableString(
       data['tid'] ??
@@ -134,13 +133,13 @@ class InvoiceData {
       status: _asString(data['status']),
       tid: transactionId,
       user: UserInfo.fromJson(_asMap(data['user'])),
-      billedTo: BilledTo.fromJson(_asMap(data['billed_to'])), // Add this
+      billedTo: BilledTo.fromJson(_asMap(data['billed_to'])),
       company: data['company'] != null ? CompanyInfo.fromJson(_asMap(data['company'])) : null,
       station: StationInfo.fromJson(_asMap(data['station'])),
       charger: _asString(data['charger']),
       connector: _asString(data['connector']),
-      vehicle: _asString(data['vehicle']), // Changed to String
-      session: SessionInfo.fromJson(_asMap(data['session'])),
+      vehicle: _asString(data['vehicle'] ?? 'NA'),
+      session: SessionInfo.fromJson(sessionData), // This will now parse duration correctly
       energy: EnergyInfo.fromJson(_asMap(data['energy'])),
       billing: BillingInfo.fromJson(_asMap(data['billing'])),
       gst: GstInfo.fromJson(_asMap(data['gst'])),
@@ -288,21 +287,39 @@ class SessionInfo {
   final String startTime;
   final String endTime;
   final int durationMinutes;
+  final String duration;
 
   SessionInfo({
     required this.id,
     required this.startTime,
     required this.endTime,
     required this.durationMinutes,
+    required this.duration,
   });
 
   factory SessionInfo.fromJson(Map<String, dynamic> json) {
     final data = _asMap(json);
+
+    // Parse duration from string format "HH:MM:SS" to minutes
+    int durationMinutes = 0;
+    String durationStr = _asString(data['duration'], fallback: '00:00:00');
+
+    if (durationStr.isNotEmpty && durationStr != '00:00:00') {
+      final parts = durationStr.split(':');
+      if (parts.length == 3) {
+        final hours = int.tryParse(parts[0]) ?? 0;
+        final minutes = int.tryParse(parts[1]) ?? 0;
+        final seconds = int.tryParse(parts[2]) ?? 0;
+        durationMinutes = (hours * 60) + minutes + (seconds > 30 ? 1 : 0); // Round up if seconds > 30
+      }
+    }
+
     return SessionInfo(
       id: _asInt(data['id'] ?? data['session_id'] ?? data['sessionId']),
       startTime: _asString(data['start_time'] ?? data['startTime']),
       endTime: _asString(data['end_time'] ?? data['endTime']),
-      durationMinutes: _asInt(data['duration_minutes'] ?? data['durationMinutes']),
+      durationMinutes: durationMinutes,
+      duration: durationStr, // Add this
     );
   }
 }

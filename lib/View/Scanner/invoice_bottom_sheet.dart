@@ -20,6 +20,8 @@ class InvoiceBottomSheet extends StatefulWidget {
 }
 
 class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
+
+  bool _isDownloading = false;
   @override
   void initState() {
     super.initState();
@@ -185,7 +187,7 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
                     ),
                     _buildInfoRow(
                       'Duration',
-                      '${invoiceData.session.durationMinutes} minutes',
+                      '${invoiceData.session.duration} (hh:mm:ss)',
                     ),
                   ]),
                   const SizedBox(height: 16),
@@ -218,11 +220,11 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
                   const SizedBox(height: 16),
                   _buildInfoSection('GST Details', [
                     _buildInfoRow(
-                      'CGST',
+                      'CGST (${invoiceData.gst.cgstRate.toStringAsFixed(1)}%)',
                       '${invoiceData.billing.currency} ${invoiceData.gst.cgstAmount.toStringAsFixed(2)}',
                     ),
                     _buildInfoRow(
-                      'SGST',
+                      'SGST (${invoiceData.gst.sgstRate.toStringAsFixed(1)}%)',
                       '${invoiceData.billing.currency} ${invoiceData.gst.sgstAmount.toStringAsFixed(2)}',
                     ),
                     _buildInfoRow(
@@ -308,7 +310,7 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
                 Text(
                   'Invoice #${invoiceData.invoiceNumber}',
                   style: GoogleFonts.poppins(
-                    fontSize: 18,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: Appcolor.black,
                   ),
@@ -364,9 +366,8 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          // Label with flexible width
           SizedBox(
-            width: 100, // Fixed width for label
+            width: 100,
             child: Text(
               label,
               style: GoogleFonts.poppins(
@@ -376,7 +377,6 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          // Value with expanded space
           Expanded(
             child: Text(
               value,
@@ -397,7 +397,7 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
 
   Widget _buildCostBreakdown(InvoiceData invoiceData) {
     return Container(
-      width: double.infinity, // Ensure full width
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Appcolor.lightGrey,
@@ -468,9 +468,8 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          // Label with flexible width
           SizedBox(
-            width: 120, // Fixed width for label
+            width: 120,
             child: Text(
               label,
               style: GoogleFonts.poppins(
@@ -506,17 +505,16 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
         width: double.infinity,
         height: 56,
         child: ElevatedButton.icon(
-          onPressed: widget.invoiceController.isLoading
-              ? null
-              : _downloadInvoicePdf,
+          onPressed: _isDownloading ? null : _downloadInvoicePdf,
           style: ElevatedButton.styleFrom(
             backgroundColor: Appcolor.green,
+            disabledBackgroundColor: Appcolor.green,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
             elevation: 0,
           ),
-          icon: widget.invoiceController.isLoading
+          icon: _isDownloading
               ? const SizedBox(
             width: 20,
             height: 20,
@@ -525,9 +523,12 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
               color: Colors.white,
             ),
           )
-              : const Icon(Icons.download, color: Colors.white),
+              : const Icon(
+            Icons.download,
+            color: Colors.white,
+          ),
           label: Text(
-            widget.invoiceController.isLoading
+            _isDownloading
                 ? 'Generating PDF...'
                 : 'Download Invoice PDF',
             style: GoogleFonts.poppins(
@@ -540,8 +541,6 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
       ),
     );
   }
-
-  // ✅ Format date only (YYYY-MM-DD)
   String _formatDateOnly(String dateTimeStr) {
     try {
       final dateTime = DateTime.parse(dateTimeStr);
@@ -611,6 +610,7 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
 
   Future<void> _downloadInvoicePdf() async {
     final invoiceData = widget.invoiceController.invoiceResponse?.data;
+
     if (invoiceData == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -621,8 +621,13 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
       return;
     }
 
+    setState(() {
+      _isDownloading = true;
+    });
+
     try {
       final filePath = await PdfService.generateInvoicePdf(invoiceData);
+
       if (mounted) {
         await PdfService.openPdf(filePath);
       }
@@ -634,6 +639,12 @@ class _InvoiceBottomSheetState extends State<InvoiceBottomSheet> {
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
       }
     }
   }

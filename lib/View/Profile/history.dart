@@ -1,4 +1,3 @@
-import 'package:evtron/View/Profile/pdf_invoice_page.dart';
 import 'package:evtron/View/Profile/shimmer_charging_card.dart';
 import 'package:evtron/View/Profile/shimmer_payment_card.dart';
 import 'package:flutter/material.dart';
@@ -127,7 +126,6 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
   }
 
   void _openInvoicePreview(int chargerHistoryId) async {
-    // Show loading indicator
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -139,24 +137,19 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
     );
 
     try {
-      // Fetch invoice data using the controller
       final invoiceController = InvoiceController();
       final success = await invoiceController.fetchInvoice(chargerHistoryId);
 
-      // Close loading dialog
       if (mounted) Navigator.pop(context);
 
       if (success && invoiceController.invoiceResponse?.data != null) {
         final invoiceData = invoiceController.invoiceResponse!.data!;
 
-        // Generate PDF directly from the fetched invoice data
         final String pdfPath = await PdfService.generateInvoicePdf(invoiceData);
 
-        // Open the generated PDF file
         await PdfService.openPdf(pdfPath);
 
       } else {
-        // Show error if invoice not found
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -463,7 +456,6 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
               ),
               Row(
                 children: [
-                  // Download Button
                   GestureDetector(
                     onTap: () => _openInvoicePreview(data.id),
                     child: Container(

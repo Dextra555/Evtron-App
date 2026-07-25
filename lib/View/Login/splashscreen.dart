@@ -374,7 +374,7 @@ class _SplashScreenState extends State<SplashScreen>
                     Padding(
                       padding: const EdgeInsets.only(bottom: 20),
                       child: Text(
-                        'Evtron v1.5',
+                        'Evtron v1.8',
                         style: TextStyle(
                           fontSize: 12,
                           color: Color(0xFF95A5A6),

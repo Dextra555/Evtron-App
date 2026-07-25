@@ -27,7 +27,7 @@ import 'homenearby.dart';
 import 'map_buttons.dart';
 import 'map_search_bar.dart';
 import 'station_card.dart';
-import 'station_details_sheet.dart';
+import 'StationDetailsPage.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -57,7 +57,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   static bool _hasShownInCurrentSession = false;
   bool _stationsLoaded = false;
   late final WalletController _walletController;
-
+  bool _isFilterExpanded = false;
   MapButtonsController? _mapButtonsController;
   LiveChargingController? _chargingController;
   late final LocationService _locationService;
@@ -95,8 +95,24 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     });
   }
 
+  void _handleFilterApplied(List<EVStation> filteredStations) {
+    print('📍 Updating map with ${filteredStations.length} filtered stations');
+
+    setState(() {
+      _evStations = filteredStations;
+      _markers.clear();
+    });
+
+    _addMarkersFromStations();
+
+    if (_selectedStation != null && !filteredStations.contains(_selectedStation)) {
+      setState(() {
+        _selectedStation = null;
+      });
+    }
+  }
+
   void _onChargingControllerUpdate() {
-    // ✅ Use debounce to prevent excessive updates
     _controllerUpdateDebounce?.cancel();
     _controllerUpdateDebounce = Timer(const Duration(milliseconds: 200), () {
       if (mounted && _mapButtonsController != null) {
@@ -966,12 +982,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
     final isFavorite = _favoriteStationIds.contains(station.id);
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) {
-        return StationDetailsSheet(
+    // Navigate to full page
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => StationDetailsPage(
           station: station,
           distance: distance,
           isFavorite: isFavorite,
@@ -982,8 +997,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           onNavigate: () {
             _openNavigation(station.location, station.name);
           },
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -1251,19 +1266,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       print('📡 Fetching latest session data for ID: $sessionId');
       await _chargingController!.fetchLiveChargingStatus(sessionId: sessionId);
 
-      // ✅ Step 3: Build charging details
       Map<String, dynamic> chargingDetails = {
         'sessionId': sessionId,
       };
 
-      // ✅ Step 4: Get vehicle data - FIRST from AuthService
       String manufacturer = 'Unknown';
       String model = 'Vehicle';
       String registrationNumber = 'N/A';
       String vehicleName = 'Unknown Vehicle';
 
       try {
-        // ✅ Try AuthService first (persists across app reinstalls)
         final vehicleData = await AuthService.getVehicleData();
 
         if (vehicleData['manufacturer'] != null && vehicleData['manufacturer']!.isNotEmpty) {
@@ -1281,7 +1293,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           print('   Registration: $registrationNumber');
           print('   Name: $vehicleName');
         } else if (_chargingController != null) {
-          // ✅ Second try: Get from controller
           final controllerManufacturer = _chargingController!.vehicleManufacturer;
           final controllerModel = _chargingController!.vehicleModel;
           final controllerRegistration = _chargingController!.vehicleRegistrationNumber;
@@ -1300,7 +1311,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           }
         }
 
-        // ✅ Third try: Use provided vehicleDetails
         if (manufacturer == 'Unknown' && vehicleDetails != null) {
           manufacturer = vehicleDetails['manufacturer'] ?? 'Unknown';
           model = vehicleDetails['model'] ?? 'Vehicle';
@@ -1322,13 +1332,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         print('⚠️ Error getting vehicle data: $e');
       }
 
-      // ✅ Set vehicle data in charging details
       chargingDetails['manufacturer'] = manufacturer;
       chargingDetails['model'] = model;
       chargingDetails['registrationNumber'] = registrationNumber;
       chargingDetails['vehicleName'] = vehicleName;
 
-      // ✅ Add session details from live data
       if (_chargingController != null && _chargingController!.currentLiveData != null) {
         final liveData = _chargingController!.currentLiveData!;
         chargingDetails['transactionId'] = liveData.transactionId;
@@ -1385,7 +1393,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     }
   }
 
-  // ✅ NEW METHOD: Exit app immediately without any dialog
   void _exitApp() {
     SystemNavigator.pop();
   }
@@ -1393,11 +1400,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // Prevent default pop behavior
+      canPop: false,
       onPopInvoked: (bool didPop) async {
-        if (didPop) return; // If already popped, do nothing
-
-        // ✅ Exit app immediately without any confirmation
+        if (didPop) return;
         _exitApp();
       },
       child: Scaffold(
@@ -1439,11 +1444,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 });
               },
             ),
+
             Positioned(
-              top: 60,
+              top: 40,
               left: 0,
               right: 0,
-              child: MapSearchBar(
+              child:
+              MapSearchBar(
                 currentPosition: _currentPosition,
                 evStations: _evStations,
                 onStationSelected: (station) {
@@ -1463,10 +1470,17 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     CameraUpdate.newLatLngZoom(location, 15),
                   );
                 },
-              ),
+                onFilterStateChanged: (isExpanded) {
+                  setState(() {
+                    _isFilterExpanded = isExpanded;
+                  });
+                },
+                onFilterApplied: _handleFilterApplied, // Add this line
+              )
             ),
+            if (!_isFilterExpanded)
             Positioned(
-              top: 135,
+              top: 115,
               left: 16,
               child: GestureDetector(
                 onTap: _navigateToPaymentScreen,
@@ -1522,9 +1536,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
+
+            if (!_isFilterExpanded)
             Positioned(
               right: 16,
-              top: 140,
+              top: 115,
               child: Column(
                 children: [
                   MapButtons(
@@ -1542,7 +1558,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ),
             ),
 
-            if (_selectedStation != null)
+            if (_selectedStation != null && !_isFilterExpanded)
               Positioned(
                 bottom: 90,
                 left: 16,
@@ -1587,6 +1603,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 }
+
+
 
 
 

@@ -694,13 +694,12 @@ class PdfService {
                           _buildTableDataCellWithoutDivider(
                             _formatFullDateTime(
                               invoiceData.session.startTime,
-                            ), // Shows: 13/07/2026 12:23 PM
+                            ),
                             flex: 3,
                             alignment: pw.Alignment.center,
                           ),
-                          // MODIFIED: DURATION in HH:MM:SS format
                           _buildTableDataCellWithoutDivider(
-                            '${_formatDurationHHMMSS(invoiceData.session.durationMinutes)} \n (hh:mm:ss)',
+                            '${invoiceData.session.duration}\n(hh:mm:ss)',
                             flex: 4,
                             alignment: pw.Alignment.center,
                           ),

@@ -1,5 +1,5 @@
 // import 'package:evtron/Model/ev_station_model.dart';
-// import 'package:evtron/View/Home/station_details_sheet.dart';
+// import 'package:evtron/View/Home/StationDetailsPage.dart';
 // import 'package:flutter/material.dart';
 // import 'package:flutter_test/flutter_test.dart';
 //

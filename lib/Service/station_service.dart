@@ -175,7 +175,6 @@ class StationService {
     return null;
   }
 
-  // Remove the Google API method entirely since we don't need it
 
   Future<BitmapDescriptor> getMarkerIcon(EVStation station) async {
     print("📍 Getting marker for: ${station.name}, Available: ${station.availableChargers}/${station.totalChargers}");

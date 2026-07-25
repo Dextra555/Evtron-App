@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../Controller/wishlist_controller.dart';
 import '../../Model/wishlist.dart';
 import '../../Theme/colors.dart';
@@ -56,12 +57,10 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
         return;
       }
 
-      // Create Google Maps URL with coordinates
       final googleMapsUrl = Uri.parse(
           "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude"
       );
 
-      // Alternative: Apple Maps URL for iOS
       final appleMapsUrl = Uri.parse(
           "http://maps.apple.com/?ll=$latitude,$longitude&q=${Uri.encodeComponent(stationName)}"
       );
@@ -77,7 +76,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
           mode: LaunchMode.externalApplication,
         );
       } else {
-        // Fallback to browser
         final browserUrl = Uri.parse(
             "https://www.google.com/maps/place/$latitude,$longitude"
         );
@@ -106,7 +104,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
     }
   }
 
-  // Navigation handler for bottom nav
   void _onTabTapped(int index) async {
     if (index == _currentIndex) return;
 
@@ -135,7 +132,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
   }
 
   void _onScanTap() {
-    // Navigate to scanner page
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (context) => const ScannerPage()),
@@ -146,8 +142,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360;
-    final isMediumScreen = screenWidth >= 360 && screenWidth < 600;
-    final isLargeScreen = screenWidth >= 600;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -155,10 +149,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
         backgroundColor: Colors.white,
         automaticallyImplyLeading: false,
         elevation: 0,
-        // leading: IconButton(
-        //   icon: const Icon(Icons.arrow_back, color: Colors.black87, size: 18),
-        //   onPressed: () => Navigator.pop(context),
-        // ),
         title: Text(
           "Favorite Stations",
           style: GoogleFonts.poppins(
@@ -172,9 +162,7 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
       body: Consumer<WishlistController>(
         builder: (context, controller, child) {
           if (controller.isLoading) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+            return _buildShimmerList(isSmallScreen);
           }
 
           if (controller.errorMessage.isNotEmpty) {
@@ -258,7 +246,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
           );
         },
       ),
-      // Add the bottom navigation bar
       bottomNavigationBar: CustomBottomNavBar(
         currentIndex: _currentIndex,
         onTap: _onTabTapped,
@@ -267,23 +254,152 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
     );
   }
 
+  // Shimmer loader with individual text shimmers inside one container
+  Widget _buildShimmerList(bool isSmallScreen) {
+    return ListView.builder(
+      padding: EdgeInsets.all(isSmallScreen ? 10 : 14),
+      itemCount: 5,
+      itemBuilder: (context, index) {
+        return Container(
+          margin: EdgeInsets.only(bottom: isSmallScreen ? 12 : 16),
+          padding: EdgeInsets.all(isSmallScreen ? 10 : 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.grey.shade100,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 15,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Shimmer.fromColors(
+            baseColor: Colors.grey[300]!,
+            highlightColor: Colors.grey[100]!,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Station icon placeholder
+                    Container(
+                      width: isSmallScreen ? 40 : 50,
+                      height: isSmallScreen ? 40 : 50,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 14),
+                      ),
+                    ),
+                    SizedBox(width: isSmallScreen ? 8 : 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Station name shimmer
+                          Container(
+                            height: isSmallScreen ? 14 : 16,
+                            width: double.infinity,
+                            color: Colors.white,
+                          ),
+                          SizedBox(height: isSmallScreen ? 4 : 6),
+                          // Address line 1 shimmer
+                          Container(
+                            height: isSmallScreen ? 10 : 12,
+                            width: double.infinity,
+                            color: Colors.white,
+                          ),
+                          SizedBox(height: 2),
+                          // Address line 2 shimmer
+                          Container(
+                            height: isSmallScreen ? 10 : 12,
+                            width: MediaQuery.of(context).size.width * 0.6,
+                            color: Colors.white,
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Favorite icon placeholder
+                    Container(
+                      width: isSmallScreen ? 20 : 24,
+                      height: isSmallScreen ? 20 : 24,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: isSmallScreen ? 10 : 12),
+                // Status chips shimmer
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    // Available slots chip
+                    Container(
+                      height: isSmallScreen ? 20 : 24,
+                      width: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    // 24/7 chip
+                    Container(
+                      height: isSmallScreen ? 20 : 24,
+                      width: 90,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    // Chargers count chip
+                    Container(
+                      height: isSmallScreen ? 20 : 24,
+                      width: 100,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: isSmallScreen ? 8 : 10),
+                // Navigation hint shimmer
+                Container(
+                  height: isSmallScreen ? 20 : 24,
+                  width: 160,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildStationCard(WishlistItem item, int index, double screenWidth) {
     final station = item.station;
     final isAvailable = station.availableChargers > 0;
     final controller = Provider.of<WishlistController>(context, listen: false);
 
-    // Determine screen size for responsive design
     final isSmallScreen = screenWidth < 360;
     final isMediumScreen = screenWidth >= 360 && screenWidth < 600;
-    final isLargeScreen = screenWidth >= 600;
 
-    // Parse latitude and longitude
     final double latitude = double.tryParse(station.latitude) ?? 0.0;
     final double longitude = double.tryParse(station.longitude) ?? 0.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Calculate available width for address
         final availableWidth = constraints.maxWidth;
         final addressMaxLines = availableWidth < 400 ? 3 : 2;
 
@@ -346,7 +462,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               SizedBox(height: isSmallScreen ? 4 : 6),
-                              // Full address with responsive design
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -379,7 +494,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
                               onTap: _isRemoving ? null : () async {
                                 setState(() => _isRemoving = true);
 
-                                // Show confirmation dialog
                                 final shouldRemove = await showDialog<bool>(
                                   context: context,
                                   builder: (context) => AlertDialog(
@@ -475,7 +589,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
                       ],
                     ),
                     SizedBox(height: isSmallScreen ? 10 : 12),
-                    // Status Row - Responsive
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -564,8 +677,6 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
                         ),
                       ],
                     ),
-
-                    // Navigation hint - Responsive
                     SizedBox(height: isSmallScreen ? 8 : 10),
                     Container(
                       padding: EdgeInsets.symmetric(

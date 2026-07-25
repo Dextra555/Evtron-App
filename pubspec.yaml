@@ -85,6 +85,7 @@ flutter:
      - assets/tear.png
      - assets/tataev.jpg
      - assets/ev-charging.json
+     - assets/Ev_car.json
 
   #   - images/a_dot_ham.jpeg
 

@@ -26,7 +26,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final WalletController _walletController = WalletController();
   double _currentBalance = 0.0;
   bool _isLoadingWallet = false;
-  bool _isInitialLoading = true; // Add this for initial load
+  bool _isInitialLoading = true;
 
   @override
   void initState() {
@@ -164,10 +164,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: _isInitialLoading
-            ? _buildLoadingScreen()
-            : Column(
+        child: Column(
           children: [
+            // Header Title (Always visible)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Row(
@@ -185,6 +184,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
             ),
             const SizedBox(height: 8),
+
+            // Balance Container
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
@@ -208,6 +209,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Container Text (Total Balance)
                     Row(
                       children: [
                         Container(
@@ -223,7 +225,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(
+                        // Show shimmer only during API fetch
+                        _isLoadingWallet || _isInitialLoading
+                            ? _buildShimmerText(width: 80, height: 12)
+                            : Text(
                           "Total Balance",
                           style: GoogleFonts.poppins(
                             fontSize: 12,
@@ -234,8 +239,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    _isLoadingWallet
-                        ? _buildShimmerBalance()
+
+                    // Wallet Amount
+                    _isLoadingWallet || _isInitialLoading
+                        ? _buildShimmerText(width: 150, height: 32)
                         : Text(
                       "₹${_currentBalance.toStringAsFixed(2)}",
                       style: GoogleFonts.poppins(
@@ -246,6 +253,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
+
+                    // Info Badge (Always visible)
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -280,9 +289,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
             ),
             const SizedBox(height: 30),
+
+            // Add Money Button
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: SizedBox(
+              child: _isLoadingWallet || _isInitialLoading
+                  ? _buildShimmerButton()
+                  : SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _handleAddMoney,
@@ -318,6 +331,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
               ),
             ),
+
+            // Add some spacing at bottom
+            const Spacer(),
           ],
         ),
       ),
@@ -329,132 +345,34 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
-  // Loading Screen with Shimmer Effect
-  Widget _buildLoadingScreen() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Loading Animation
-          SizedBox(
-            width: 60,
-            height: 60,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              color: Appcolor.green,
-              valueColor: AlwaysStoppedAnimation<Color>(Appcolor.green),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Loading Text with Shimmer
-          Shimmer.fromColors(
-            baseColor: Colors.grey[300]!,
-            highlightColor: Colors.grey[100]!,
-            child: Text(
-              "Loading Wallet...",
-              style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          Text(
-            "Please wait while we fetch your balance",
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: Colors.grey[500],
-            ),
-          ),
-
-          const SizedBox(height: 40),
-
-          // Loading Shimmer Cards
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                _buildShimmerCard(),
-                const SizedBox(height: 12),
-                _buildShimmerCard(),
-                const SizedBox(height: 12),
-                _buildShimmerCard(),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Shimmer Card for Loading
-  Widget _buildShimmerCard() {
+  // Reusable Shimmer Text Widget
+  Widget _buildShimmerText({required double width, required double height}) {
     return Shimmer.fromColors(
       baseColor: Colors.grey[300]!,
       highlightColor: Colors.grey[100]!,
       child: Container(
-        width: double.infinity,
-        height: 60,
+        width: width,
+        height: height,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[200]!),
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 100,
-                    height: 12,
-                    color: Colors.grey[300],
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: 150,
-                    height: 10,
-                    color: Colors.grey[300],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Shimmer Balance Widget
-  Widget _buildShimmerBalance() {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey[300]!,
-      highlightColor: Colors.grey[100]!,
-      child: Container(
-        width: 150,
-        height: 32,
-        decoration: BoxDecoration(
-          color: Colors.grey[300],
           borderRadius: BorderRadius.circular(4),
         ),
       ),
     );
   }
+
+  Widget _buildShimmerButton() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Container(
+        width: double.infinity,
+        height: 50,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
 }
-
-

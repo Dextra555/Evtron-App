@@ -1,5 +1,3 @@
-// lib/View/Scanner/scanner_page.dart
-
 import 'package:evtron/Controller/scan_validation_controller.dart';
 import 'package:evtron/View/Scanner/vehiclelist.dart';
 import 'package:flutter/material.dart';
@@ -320,24 +318,24 @@ class _ScannerPageState extends State<ScannerPage>
     );
   }
 
-  // ========== SCANNER METHODS ==========
   void _handleScan(BarcodeCapture capture) {
     if (!isScanning || !mounted || !_isInitialized) return;
 
     final String? code = capture.barcodes.first.rawValue;
     if (code != null) {
-      print('✅ QR Code Scanned: $code');
+      final String upperCode = code.toUpperCase();
+      print('✅ QR Code Scanned: $upperCode');
       setState(() {
         isScanning = false;
-        scannedData = code;
+        scannedData = upperCode;
       });
       _scanAnimationController.stop();
       _stopCamera();
 
-      _connectorIdController.text = code;
+      _connectorIdController.text = upperCode;
       _validateConnectorId();
 
-      _navigateToVehicleScreen(code);
+      _navigateToVehicleScreen(upperCode);
     }
   }
 
@@ -357,7 +355,6 @@ class _ScannerPageState extends State<ScannerPage>
     }
   }
 
-  // ========== CONNECTOR ID VALIDATION ==========
   void _validateConnectorId() {
     setState(() {
       _isConnectorIdValid = _connectorIdController.text.trim().isNotEmpty;
@@ -365,16 +362,14 @@ class _ScannerPageState extends State<ScannerPage>
   }
 
   void _startChargingWithManualId() {
-    String connectorId = _connectorIdController.text.trim();
+    String connectorId = _connectorIdController.text.trim().toUpperCase();
     if (connectorId.isNotEmpty) {
       print('Manual connector ID entered: $connectorId');
       _navigateToVehicleScreen(connectorId);
     }
   }
 
-  // ========== HELPER METHOD TO EXTRACT CONNECTOR ID ==========
   int _extractConnectorId(String connectorUid) {
-    // Try to extract connector ID from UID (e.g., "CP-001.1" -> 1 or "CP-001" -> 1)
     try {
       final parts = connectorUid.split('.');
       if (parts.length >= 2) {
@@ -393,12 +388,7 @@ class _ScannerPageState extends State<ScannerPage>
     }
   }
 
-  // ========== NAVIGATION METHODS ==========
-  // lib/View/Scanner/scanner_page.dart (Updated - Only the relevant part)
-
-  // ========== NAVIGATION METHODS ==========
   Future<void> _navigateToVehicleScreen(String scannedData) async {
-    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -471,7 +461,7 @@ class _ScannerPageState extends State<ScannerPage>
         if (validationData.userBalance < 5) {
           _showErrorDialog(
             'Insufficient wallet balance (₹${validationData.userBalance.toStringAsFixed(2)}). '
-            'Minimum balance required: ₹5. Please recharge your wallet.',
+                'Minimum balance required: ₹5. Please recharge your wallet.',
           );
           _resetScanner();
           return;
@@ -491,7 +481,7 @@ class _ScannerPageState extends State<ScannerPage>
               chargerModel: validationData.charger.model.isNotEmpty
                   ? validationData.charger.model
                   : widget.chargerDetails?['chargerModel'] ??
-                        'Standard Charger',
+                  'Standard Charger',
               chargerType: validationData.charger.connectorType.isNotEmpty
                   ? validationData.charger.connectorType
                   : _selectedChargerType,
@@ -688,14 +678,14 @@ class _ScannerPageState extends State<ScannerPage>
 
   // ========== ERROR DIALOG ==========
   void _showErrorDialog(
-    String errorMessage, {
-    String? title,
-    IconData? icon,
-    Color? iconColor,
-    String? failedCheck,
-    String? errorCode,
-    List<ErrorAction>? actions,
-  }) {
+      String errorMessage, {
+        String? title,
+        IconData? icon,
+        Color? iconColor,
+        String? failedCheck,
+        String? errorCode,
+        List<ErrorAction>? actions,
+      }) {
     // Use values from controller if not provided
     if (title == null && _scanValidationController.response != null) {
       title = _scanValidationController.response!.getErrorTitle();
@@ -781,9 +771,9 @@ class _ScannerPageState extends State<ScannerPage>
   }
 
   List<Widget> _buildActionButtons(
-    List<ErrorAction> actions,
-    BuildContext context,
-  ) {
+      List<ErrorAction> actions,
+      BuildContext context,
+      ) {
     final List<Widget> buttons = [];
 
     for (var i = 0; i < actions.length; i++) {
@@ -1332,7 +1322,7 @@ class _ScannerPageState extends State<ScannerPage>
       builder: (context, child) {
         return Positioned(
           top:
-              (MediaQuery.of(context).size.height * 0.15) +
+          (MediaQuery.of(context).size.height * 0.15) +
               20 +
               _scanAnimation.value,
           left: (MediaQuery.of(context).size.width / 2) - 115,
@@ -1403,8 +1393,19 @@ class _ScannerPageState extends State<ScannerPage>
             child: TextField(
               controller: _connectorIdController,
               keyboardType: TextInputType.text,
-              textCapitalization: TextCapitalization.none,
+              textCapitalization: TextCapitalization.characters,
               style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
+              onChanged: (value) {
+                if (value != value.toUpperCase()) {
+                  _connectorIdController.value = TextEditingValue(
+                    text: value.toUpperCase(),
+                    selection: TextSelection.collapsed(
+                      offset: value.toUpperCase().length,
+                    ),
+                  );
+                  _validateConnectorId();
+                }
+              },
               decoration: InputDecoration(
                 hintText: "Enter Connector ID",
                 hintStyle: GoogleFonts.poppins(
@@ -1419,20 +1420,20 @@ class _ScannerPageState extends State<ScannerPage>
                 // ✅ FIXED: Replace check icon with arrow icon
                 suffixIcon: _isConnectorIdValid
                     ? GestureDetector(
-                        onTap: _startChargingWithManualId,
-                        child: Container(
-                          margin: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Appcolor.green,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.arrow_forward,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      )
+                  onTap: _startChargingWithManualId,
+                  child: Container(
+                    margin: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Appcolor.green,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_forward,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                )
                     : null,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -1482,7 +1483,6 @@ class _ScannerPageState extends State<ScannerPage>
   }
 }
 
-// ========== ERROR ACTION CLASS ==========
 class ErrorAction {
   final String label;
   final String action;
@@ -1494,3 +1494,6 @@ class ErrorAction {
     this.isPrimary = false,
   });
 }
+
+
+

@@ -93,6 +93,8 @@ class ApiEndpoints {
   static const String walletTransactions = '$baseUrl/wallet/transactions';
 
   static const String cancelAllPendingOrders = '$baseUrl/wallet/recharge/cancel-all-pending';
+
+  static const String filterMasterData = '$baseUrl/filter/master-data';
 }
 
 

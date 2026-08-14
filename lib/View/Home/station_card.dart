@@ -9,6 +9,7 @@ class StationCard extends StatelessWidget {
   final VoidCallback onDetails;
   final VoidCallback onNavigate;
   final VoidCallback onClose;
+  final Map<String, dynamic>? activeFilters;
 
   const StationCard({
     super.key,
@@ -19,6 +20,7 @@ class StationCard extends StatelessWidget {
     required this.onDetails,
     required this.onNavigate,
     required this.onClose,
+    this.activeFilters,
   });
 
   String _formatDistance() {
@@ -35,27 +37,49 @@ class StationCard extends StatelessWidget {
     return "${hours}h${remainingMinutes > 0 ? ' $remainingMinutes min' : ''}";
   }
 
+  List<ConnectorPort> _getVisibleConnectors() {
+    if (activeFilters == null || activeFilters!.isEmpty) {
+      return List<ConnectorPort>.from(station.connectorPorts);
+    }
+    return station.getFilteredConnectorPorts(activeFilters);
+  }
+
+  bool _hasActiveFilter() {
+    if (activeFilters == null || activeFilters!.isEmpty) return false;
+
+    final chargerType = activeFilters!['chargerType']?.toString();
+    final connectorType = activeFilters!['connectorType']?.toString();
+    final status = activeFilters!['status']?.toString();
+    final powerRange = activeFilters!['powerRange'] as RangeValues?;
+
+    return (chargerType != null && chargerType.isNotEmpty) ||
+        (connectorType != null && connectorType.isNotEmpty) ||
+        (status != null && status.isNotEmpty) ||
+        (powerRange != null && !(powerRange.start == 0.0 && powerRange.end == 350.0));
+  }
+
   // ✅ Get dynamic status from connector ports
   String _getStationStatus() {
-    if (station.connectorPorts.isEmpty) {
-      return 'No connectors';
+    final visibleConnectors = _getVisibleConnectors();
+    if (visibleConnectors.isEmpty) {
+      return 'No matching connectors';
     }
 
-    final hasAvailable = station.connectorPorts.any(
+    final hasAvailable = visibleConnectors.any(
             (port) => port.status.toLowerCase() == 'available'
     );
 
-    final hasFault = station.connectorPorts.any(
+    final hasFault = visibleConnectors.any(
             (port) => port.status.toLowerCase() == 'fault' ||
             port.status.toLowerCase() == 'error'
     );
 
-    final hasOffline = station.connectorPorts.any(
+    final hasOffline = visibleConnectors.any(
             (port) => port.status.toLowerCase() == 'offline'
     );
 
     if (hasAvailable) {
-      final availableCount = station.connectorPorts
+      final availableCount = visibleConnectors
           .where((port) => port.status.toLowerCase() == 'available')
           .length;
       return '$availableCount avail';
@@ -68,20 +92,21 @@ class StationCard extends StatelessWidget {
 
   // ✅ Get status color
   Color _getStatusColor() {
-    if (station.connectorPorts.isEmpty) {
+    final visibleConnectors = _getVisibleConnectors();
+    if (visibleConnectors.isEmpty) {
       return Colors.grey;
     }
 
-    final hasAvailable = station.connectorPorts.any(
+    final hasAvailable = visibleConnectors.any(
             (port) => port.status.toLowerCase() == 'available'
     );
 
-    final hasFault = station.connectorPorts.any(
+    final hasFault = visibleConnectors.any(
             (port) => port.status.toLowerCase() == 'fault' ||
             port.status.toLowerCase() == 'error'
     );
 
-    final hasOffline = station.connectorPorts.any(
+    final hasOffline = visibleConnectors.any(
             (port) => port.status.toLowerCase() == 'offline'
     );
 
@@ -96,7 +121,7 @@ class StationCard extends StatelessWidget {
 
   // ✅ Get available count
   int _getAvailableCount() {
-    return station.connectorPorts
+    return _getVisibleConnectors()
         .where((port) => port.status.toLowerCase() == 'available')
         .length;
   }
@@ -122,7 +147,9 @@ class StationCard extends StatelessWidget {
     final statusText = _getStationStatus();
     final statusColor = _getStatusColor();
     final availableCount = _getAvailableCount();
+    final visibleCount = _getVisibleConnectors().length;
     final formattedPrice = _getFormattedPrice();
+    final hasActiveFilter = _hasActiveFilter();
 
     return GestureDetector(
       onTap: onDetails,
@@ -217,7 +244,9 @@ class StationCard extends StatelessWidget {
                           const Icon(Icons.ev_station, color: Colors.green, size: 12),
                           const SizedBox(width: 4),
                           Text(
-                            '${station.connectorPorts.length} total',
+                            hasActiveFilter
+                                ? '$availableCount/$visibleCount Available'
+                                : '${station.connectorPorts.length} total',
                             style: const TextStyle(color: Colors.white70, fontSize: 12),
                           ),
                         ],

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import '../Model/invoice_model.dart';
 import 'AuthService.dart';
 
@@ -25,7 +26,7 @@ class InvoiceService {
       print('🔍 Fetching invoice for session ID: $sessionId');
       print('🔍 Token: ${token.substring(0, token.length > 30 ? 30 : token.length)}...');
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse('$baseUrl/api/mobile/invoices/session/$sessionId'),
         headers: {
           'Authorization': 'Bearer $token',
@@ -61,4 +62,5 @@ class InvoiceService {
     }
   }
 }
+
 

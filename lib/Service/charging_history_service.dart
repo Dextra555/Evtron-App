@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import '../model/charging_history_model.dart';
 import 'api_endpoints.dart';
 
@@ -13,17 +14,12 @@ class ChargingHistoryService {
       print('API URL: ${ApiEndpoints.chargingHistory}');
       print('================================================');
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(ApiEndpoints.chargingHistory),
         headers: {
           "Accept": "application/json",
           "Content-Type": "application/json",
           "Authorization": "Bearer $token",
-        },
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Connection timeout. Please check your internet connection.');
         },
       );
 
@@ -62,10 +58,14 @@ class ChargingHistoryService {
         throw Exception('Failed to load charging history. Status: ${response.statusCode}');
       }
 
-    } catch (e) {
+    } on NetworkException {
+      rethrow;
+    } catch (e, stackTrace) {
       print('❌ Exception in getChargingHistory: $e');
-      throw Exception(e.toString());
+      print(stackTrace);
+      throw Exception('Failed to load charging history. Please try again.');
     }
   }
 }
+
 

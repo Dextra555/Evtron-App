@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Model/ev_station_model.dart';
+import '../View/Home/CustomMarkerlocation.dart';
+import 'StationCacheService.dart';
 import 'api_endpoints.dart';
 
 class AuthSessionExpiredException implements Exception {
@@ -21,14 +24,31 @@ class StationService {
   static const String _customApiUrl = ApiEndpoints.stations;
   final http.Client _httpClient;
 
+  final StationCacheService _cacheService = StationCacheService();
+
   Future<List<EVStation>> fetchStations({
     LatLng? currentPosition,
+    bool useCache = true,
   }) async {
     try {
+      if (useCache) {
+        final cachedStations = await _cacheService.getCachedStations();
+        if (cachedStations.isNotEmpty) {
+          print("✅ Returning ${cachedStations.length} stations from cache");
+          return cachedStations;
+        }
+      }
+
+      print("📡 Fetching stations from Custom API...");
       final customStations = await _fetchFromCustomAPI();
 
       if (customStations.isNotEmpty) {
         print("✅ Loaded ${customStations.length} stations from Custom API");
+
+        // Cache the results (expires in 10 seconds)
+        await _cacheService.saveStations(customStations);
+        print("💾 Cached ${customStations.length} stations (10s expiry)");
+
         return customStations;
       }
 
@@ -36,9 +56,120 @@ class StationService {
       return [];
     } on AuthSessionExpiredException {
       rethrow;
-    } catch (e) {
+    } on NetworkException {
+      rethrow;
+    } catch (e, stackTrace) {
       print("❌ Error fetching stations: $e");
+      print(stackTrace);
+
+      final fallbackStations = await _cacheService.getCachedStations();
+      if (fallbackStations.isNotEmpty) {
+        print("⚠️ API failed, returning ${fallbackStations.length} cached stations as fallback");
+        return fallbackStations;
+      }
+
       return [];
+    }
+  }
+
+  // ✅ IMMEDIATE REFRESH - ALWAYS fetches fresh data and updates cache
+  Future<List<EVStation>> refreshStations({
+    LatLng? currentPosition,
+  }) async {
+    try {
+      print('🔄 FORCE REFRESH: Fetching fresh stations immediately...');
+
+      // ✅ Fetch fresh data from API (always)
+      final stations = await _fetchFromCustomAPI();
+
+      if (stations.isNotEmpty) {
+        // ✅ Update cache with fresh data immediately (10 seconds expiry)
+        await _cacheService.saveStations(stations);
+        print("✅ REFRESH COMPLETE: ${stations.length} stations loaded and cached (10s expiry)");
+        return stations;
+      }
+
+      // If API returns empty, try to return cached data
+      final cachedStations = await _cacheService.getCachedStations();
+      if (cachedStations.isNotEmpty) {
+        print("⚠️ API returned empty, showing cached stations");
+        return cachedStations;
+      }
+
+      return [];
+    } on AuthSessionExpiredException {
+      rethrow;
+    } on NetworkException {
+      rethrow;
+    } catch (e, stackTrace) {
+      print("❌ Error refreshing stations: $e");
+      print(stackTrace);
+
+      // Return cached data as fallback
+      final cachedStations = await _cacheService.getCachedStations();
+      if (cachedStations.isNotEmpty) {
+        print("⚠️ Error, showing cached stations as fallback");
+        return cachedStations;
+      }
+
+      return [];
+    }
+  }
+
+  // ✅ Get stations immediately from cache (for initial load)
+  Future<List<EVStation>> getStationsImmediately({
+    LatLng? currentPosition,
+  }) async {
+    try {
+      // Get cached stations immediately
+      final cachedStations = await _cacheService.getCachedStations();
+
+      // If cache exists and is valid (within 10 seconds), return it immediately
+      if (cachedStations.isNotEmpty) {
+        print("✅ Returning ${cachedStations.length} stations from cache (immediate)");
+
+        // Start background refresh (will update if cache expired)
+        _refreshInBackground(currentPosition);
+
+        return cachedStations;
+      }
+
+      // No cache - fetch from API
+      print("📡 No cache available, fetching from API...");
+      final stations = await _fetchFromCustomAPI();
+
+      if (stations.isNotEmpty) {
+        await _cacheService.saveStations(stations);
+        print("💾 Cached ${stations.length} stations (10s expiry)");
+      }
+
+      return stations;
+    } catch (e) {
+      print("❌ Error getting stations immediately: $e");
+      return [];
+    }
+  }
+
+  // ✅ Background refresh with 10-second expiry check
+  Future<void> _refreshInBackground(LatLng? currentPosition) async {
+    try {
+      // Check if cache is still valid (within 10 seconds)
+      final isValid = await _cacheService.isCacheValid();
+
+      if (!isValid) {
+        print("🔄 Background refresh: Cache expired (>10s), fetching fresh stations...");
+        final freshStations = await _fetchFromCustomAPI();
+
+        if (freshStations.isNotEmpty) {
+          // Cache fresh data (10 seconds expiry)
+          await _cacheService.saveStations(freshStations);
+          print("🔄 Background refresh completed: ${freshStations.length} stations cached (10s expiry)");
+        }
+      } else {
+        print("✅ Background refresh: Cache still valid (<10s), no update needed");
+      }
+    } catch (e) {
+      print("⚠️ Background refresh failed: $e");
     }
   }
 
@@ -46,32 +177,24 @@ class StationService {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Debug: Check all stored keys
-      print("🔑 All stored keys: ${prefs.getKeys()}");
-
       // Try different possible token keys
       String? token = prefs.getString('auth_token');
-
-      // If not found, try other possible keys
       if (token == null) {
         token = prefs.getString('token');
         print("🔑 Found token under 'token' key");
       }
-
       if (token == null) {
         token = prefs.getString('access_token');
         print("🔑 Found token under 'access_token' key");
       }
-
       if (token == null) {
         print("❌ No authentication token found in SharedPreferences");
-        print("   Please login again to get a valid token");
         return [];
       }
 
       print("🔑 Token found: ${token.substring(0, min(20, token.length))}...");
 
-      final response = await _httpClient.get(
+      final response = await NetworkService.get(
         Uri.parse(_customApiUrl),
         headers: {
           'Authorization': 'Bearer $token',
@@ -82,7 +205,6 @@ class StationService {
 
       print("📡 API STATUS CODE: ${response.statusCode}");
 
-      // Log response body for debugging
       if (response.statusCode != 200) {
         print("📡 Error Response Body: ${response.body}");
       }
@@ -93,9 +215,6 @@ class StationService {
             ? payload['error']?.toString().toLowerCase() ?? ''
             : '';
         final isInvalidToken = errorText.contains('invalid token') || errorText.contains('token expired');
-
-        print("❌ Token is invalid or expired");
-        print("   Please logout and login again");
 
         if (isInvalidToken || response.statusCode == 401 || response.statusCode == 403) {
           throw AuthSessionExpiredException('Your session is invalid or expired. Please log in again.');
@@ -108,7 +227,6 @@ class StationService {
       }
 
       final Map<String, dynamic> data = json.decode(response.body);
-      print("📡 Full API Response: $data");
 
       if (data['success'] != true) {
         print("❌ API success is false");
@@ -146,14 +264,17 @@ class StationService {
           .where((station) => station.latitude != 0 && station.longitude != 0)
           .toList();
 
-      print("✅ Total Stations from Custom API: ${stations.length}");
-
+      // Debug: Print available/total for each station
       for (var station in stations) {
-        print('📍 Station: ${station.name}, Available: ${station.availableChargers}/${station.totalChargers}');
+        print("📍 Station: ${station.name}, Available: ${station.availableChargers}/${station.totalChargers}");
       }
+
+      print("✅ Total Stations from Custom API: ${stations.length}");
 
       return stations;
     } on AuthSessionExpiredException {
+      rethrow;
+    } on NetworkException {
       rethrow;
     } catch (e, stackTrace) {
       print("❌ CUSTOM API ERROR: $e");
@@ -175,22 +296,52 @@ class StationService {
     return null;
   }
 
-
+  // ✅ Updated to use custom marker with proper values
   Future<BitmapDescriptor> getMarkerIcon(EVStation station) async {
-    print("📍 Getting marker for: ${station.name}, Available: ${station.availableChargers}/${station.totalChargers}");
+    print("📍 Getting marker for: ${station.name}");
+    print("   Available: ${station.availableChargers}/${station.totalChargers}");
+    print("   Status: ${station.status}");
 
-    if (station.availableChargers > 0) {
-      print("   → 🟢 GREEN marker (${station.availableChargers} charger(s) available)");
-      return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
-    } else {
-      print("   → 🔴 RED marker (no chargers available)");
-      return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+    // Determine if station has faults or offline chargers
+    bool hasFault = false;
+    bool hasOffline = false;
+
+    if (station.chargerStatusCounts != null) {
+      hasFault = station.chargerStatusCounts!['fault'] != null && station.chargerStatusCounts!['fault']! > 0;
+      hasOffline = station.chargerStatusCounts!['offline'] != null && station.chargerStatusCounts!['offline']! > 0;
     }
+
+    // Check if any connector ports have fault or offline status
+    if (!hasFault || !hasOffline) {
+      for (var port in station.connectorPorts) {
+        if (port.status.toLowerCase() == 'fault') hasFault = true;
+        if (port.status.toLowerCase() == 'offline') hasOffline = true;
+        if (hasFault && hasOffline) break;
+      }
+    }
+
+    // Determine if available
+    bool isAvailable = station.availableChargers > 0;
+
+    // Get overall status
+    String status = station.getOverallStatus();
+
+    print("   → Using custom marker with available: ${station.availableChargers}, total: ${station.totalChargers}");
+    print("   → isAvailable: $isAvailable, status: $status, hasFault: $hasFault, hasOffline: $hasOffline");
+
+    // Create the custom marker
+    return await LargeChargerMarker.createLargeMarker(
+      available: station.availableChargers,
+      total: station.totalChargers,
+      isAvailable: isAvailable,
+      status: status,
+      hasFault: hasFault,
+      hasOffline: hasOffline,
+    );
   }
 
   LatLngBounds calculateBounds(List<EVStation> stations, LatLng currentPosition) {
     if (stations.isEmpty) {
-      // Return a default bounds centered on current position
       return LatLngBounds(
         southwest: LatLng(currentPosition.latitude - 0.1, currentPosition.longitude - 0.1),
         northeast: LatLng(currentPosition.latitude + 0.1, currentPosition.longitude + 0.1),
@@ -221,4 +372,5 @@ class StationService {
     );
   }
 }
+
 

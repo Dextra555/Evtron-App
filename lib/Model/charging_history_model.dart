@@ -2,6 +2,7 @@ class ChargingHistoryModel {
   final int id;
   final String stationName;
   final String? stationAddress;
+  final String? stationType;
   final String chargerId;
   final String chargerModel;
   final String? connectorId;
@@ -17,6 +18,7 @@ class ChargingHistoryModel {
     required this.id,
     required this.stationName,
     this.stationAddress,
+    this.stationType,
     required this.chargerId,
     required this.chargerModel,
     this.connectorId,
@@ -34,6 +36,7 @@ class ChargingHistoryModel {
       id: json['id'] ?? 0,
       stationName: json['station_name'] ?? '',
       stationAddress: json['station_address'],
+      stationType: (json['station_type'] ?? json['stationType'])?.toString(),
       chargerId: json['charger_id'] ?? '',
       chargerModel: json['charger_model'] ?? '',
       connectorId: json['connector_id'],

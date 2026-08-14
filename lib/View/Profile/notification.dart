@@ -1,148 +1,205 @@
 import 'package:flutter/material.dart';
 
-class NotificationScreen extends StatelessWidget {
-  const NotificationScreen({super.key});
+class NotificationsScreen extends StatelessWidget {
+  const NotificationsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
-
-              Row(
-                children: [
-                  _circleButton(
-                    Icons.arrow_back_ios_new,
-                    onTap: () {
-                      Navigator.pop(context);
-                    },
-                  ),
-
-                  Expanded(
-                    child: Center(
-                      child: Text("Notifications",
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black, // Changed to black
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-
-              _notificationCard(
-                color: Colors.green,
-                title: "Charging Completed!",
-                subtitle: "Charging completed from Charging Completed!",
-                time: "13m",
-                icon: Icons.bolt,
-              ),
-
-              const SizedBox(height: 12),
-
-              _notificationCard(
-                color: Colors.red,
-                title: "Charger Occupied",
-                subtitle: "Alert: Description from Charger Occupied.",
-                time: "15m",
-                icon: Icons.warning,
-              ),
-            ],
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: const Text(
+          'Notifications',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _circleButton(IconData icon, {VoidCallback? onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100, // Changed to light grey
-          shape: BoxShape.circle,
+        backgroundColor: Colors.grey[50],
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black87),
+          onPressed: () {},
         ),
-        child: Icon(icon, color: Colors.black, size: 16), // Changed to black
+        centerTitle: false,
       ),
-    );
-  }
-
-  Widget _notificationCard({
-    required Color color,
-    required String title,
-    required String subtitle,
-    required String time,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50, // Changed to light grey background
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey.shade200, // Changed to light grey border
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          /// Icon
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1), // Changed to lighter opacity
-              shape: BoxShape.circle,
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 16),
+            // Notification type cards
+            _buildNotificationTypeCard(
+              icon: Icons.notifications_outlined,
+              title: 'Notification',
+              isSelected: true,
             ),
-            child: Icon(icon, color: color, size: 18),
-          ),
-
-          const SizedBox(width: 10),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
+            const SizedBox(height: 10),
+            _buildNotificationTypeCard(
+              icon: Icons.sms_outlined,
+              title: 'SMS',
+              isSelected: false,
+            ),
+            const SizedBox(height: 10),
+            _buildNotificationTypeCard(
+              icon: Icons.email_outlined,
+              title: 'Email',
+              isSelected: false,
+            ),
+            const SizedBox(height: 10),
+            _buildNotificationTypeCard(
+              icon: Icons.push_pin_outlined,
+              title: 'Push Notifications',
+              isSelected: false,
+            ),
+            const SizedBox(height: 24),
+            // Notify me when section
+            const Text(
+              'Notify me when',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Toggle items
+            _buildToggleItem(
+              title: 'The charger becomes available',
+              value: true,
+              onChanged: (value) {},
+            ),
+            _buildDivider(),
+            _buildToggleItem(
+              title: 'The charging session is interrupted',
+              value: true,
+              onChanged: (value) {},
+            ),
+            _buildDivider(),
+            _buildToggleItem(
+              title: 'RFID status is updated',
+              value: false,
+              onChanged: (value) {},
+            ),
+            const Spacer(),
+            // Submit button
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () {},
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Submit',
                   style: TextStyle(
-                    color: Colors.black87, // Changed to dark color
-                    fontSize: 13,
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.grey.shade600, // Changed to grey
-                    fontSize: 11,
-                  ),
-                ),
-              ],
+              ),
+            ),
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotificationTypeCard({
+    required IconData icon,
+    required String title,
+    required bool isSelected,
+  }) {
+    return GestureDetector(
+      onTap: () {},
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? Colors.blue : Colors.grey[300]!,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? Colors.white : Colors.grey[600],
+              size: 24,
+            ),
+            const SizedBox(width: 14),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: isSelected ? Colors.white : Colors.black87,
+              ),
+            ),
+            const Spacer(),
+            if (isSelected)
+              const Icon(
+                Icons.check_circle,
+                color: Colors.white,
+                size: 22,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToggleItem({
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                color: Colors.black87,
+              ),
             ),
           ),
-
-          Text(
-            time,
-            style: TextStyle(
-              color: Colors.grey.shade500, // Changed to grey
-              fontSize: 11,
+          Transform.scale(
+            scale: 0.9,
+            child: Switch(
+              value: value,
+              onChanged: onChanged,
+              activeColor: Colors.blue,
+              inactiveThumbColor: Colors.grey[400],
+              inactiveTrackColor: Colors.grey[300],
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return Divider(
+      height: 1,
+      thickness: 1,
+      color: Colors.grey[200],
     );
   }
 }

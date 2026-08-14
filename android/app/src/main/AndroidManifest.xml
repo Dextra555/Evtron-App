@@ -17,7 +17,7 @@
     </queries>
 
     <application
-        android:label="evtron"
+        android:label="Evtron"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

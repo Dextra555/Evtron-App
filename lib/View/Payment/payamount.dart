@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -44,13 +45,11 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
   int? _currentTransactionId;
   WalletReceiptModel? _receiptData;
   File? _generatedReceiptFile;
-
-  double _walletBalance = 0.0;
-
-  // Track current order ID to handle cancellation
-  String? _currentOrderId;
   bool _isCancelling = false;
   bool _hasAttemptedCleanup = false;
+  String? _currentOrderId;
+  double _walletBalance = 0.0;
+
 
   final List<double> _presetAmounts = [100, 200, 500, 1000, 2000, 5000];
 
@@ -95,7 +94,7 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Payment failed: ${response.message}",
+            "Your payment could not be processed. Please try again.",
             style: GoogleFonts.poppins(fontSize: 12),
           ),
           backgroundColor: Colors.red,
@@ -144,7 +143,7 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
       // but not tracked by this widget
       try {
         // Call the backend to cancel any pending orders for this user
-        final response = await http.post(
+        final response = await NetworkService.post(
           Uri.parse('${ApiEndpoints.baseUrl}/wallet/recharge/cancel-all-pending'),
           headers: {
             'Accept': 'application/json',
@@ -209,46 +208,43 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
             });
           }
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                cancelResponse.autoRecovered
-                    ? "Payment was already processed. Balance updated."
-                    : "Payment cancelled. You can try again.",
-                style: GoogleFonts.poppins(fontSize: 12),
-              ),
-              backgroundColor: cancelResponse.autoRecovered ? Appcolor.green : Colors.orange,
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          // ScaffoldMessenger.of(context).showSnackBar(
+          //   SnackBar(
+          //     content: Text(
+          //       cancelResponse.autoRecovered
+          //           ? "Payment was already processed. Balance updated."
+          //           : "Payment cancelled. You can try again.",
+          //       style: GoogleFonts.poppins(fontSize: 12),
+          //     ),
+          //     backgroundColor: cancelResponse.autoRecovered ? Appcolor.green : Colors.orange,
+          //     duration: const Duration(seconds: 2),
+          //   ),
+          // );
         } else {
-          // If cancel fails, try to verify and cleanup
           await _verifyAndCleanupOrder(token);
         }
       }
     } catch (e) {
       debugPrint('Cancel order error: $e');
-      // Try alternative cleanup
       try {
         final token = await AuthService.getUserToken();
         if (token != null && token.isNotEmpty && _currentOrderId != null) {
           await _verifyAndCleanupOrder(token);
         }
       } catch (_) {
-        // If all fails, reset the order ID
         _currentOrderId = null;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Payment cancelled. Please try again.",
-                style: GoogleFonts.poppins(fontSize: 12),
-              ),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
+        // if (mounted) {
+        //   ScaffoldMessenger.of(context).showSnackBar(
+        //     SnackBar(
+        //       content: Text(
+        //         "Payment cancelled. Please try again.",
+        //         style: GoogleFonts.poppins(fontSize: 12),
+        //       ),
+        //       backgroundColor: Colors.orange,
+        //       duration: const Duration(seconds: 2),
+        //     ),
+        //   );
+        // }
       }
     } finally {
       if (mounted) {
@@ -311,7 +307,7 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
 
     try {
       // Try alternative cancellation with just the order ID
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse('${ApiEndpoints.baseUrl}/wallet/recharge/cancel'),
         headers: {
           'Accept': 'application/json',
@@ -1075,11 +1071,19 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
       _razorpay.open(options);
 
     } catch (e) {
+      final message = e is NetworkException
+          ? NetworkService.noInternetMessage
+          : (e.toString().contains('Failed to create order') ||
+                  e.toString().contains('Unable to open payment gateway') ||
+                  e.toString().contains('incomplete'))
+              ? e.toString()
+              : 'Failed to create order. Please try again.';
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              "Error: ${e.toString()}",
+              message,
               style: GoogleFonts.poppins(fontSize: 12),
             ),
             backgroundColor: Colors.red,
@@ -1878,4 +1882,5 @@ class _AmountSelectionSectionState extends State<AmountSelectionSection> {
     );
   }
 }
+
 

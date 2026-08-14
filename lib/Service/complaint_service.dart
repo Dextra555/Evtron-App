@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../Model/complaint_response_model.dart';
@@ -23,7 +24,7 @@ class ComplaintService {
       final tokenType =
       prefs.getString('token_type');
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(ApiEndpoints.complaints),
         headers: {
           'Content-Type': 'application/json',

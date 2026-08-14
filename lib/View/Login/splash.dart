@@ -11,7 +11,6 @@ class ChargingIntroPage extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          /// 🔹 Background Image
           SizedBox.expand(
             child: Image.asset(
               'assets/tear.png',
@@ -19,7 +18,6 @@ class ChargingIntroPage extends StatelessWidget {
             ),
           ),
 
-          /// 🔹 Gradient Overlay
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(

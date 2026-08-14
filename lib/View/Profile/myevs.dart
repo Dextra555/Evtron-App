@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import '../../Controller/manufacturer_controller.dart';
 import '../../Model/manufacturer_model.dart';
 import '../../Theme/colors.dart';
@@ -28,8 +32,8 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
 
   bool _isAddingVehicle = false;
   bool _isLoadingVehicles = true;
-  bool _isLoadingManufacturers = false;  // Add this
-  bool _isLoadingModels = false;  // Add this
+  bool _isLoadingManufacturers = false;  
+  bool _isLoadingModels = false; 
   bool _isDeleting = false;
   bool _isUpdating = false;
 
@@ -408,18 +412,55 @@ class _MyVehiclesPageState extends State<MyVehiclesPage> {
       _isLoadingManufacturers = true;
     });
 
-    final response = await _settingsController.fetchManufacturers();
+    try {
+      final response = await _settingsController.fetchManufacturers();
 
-    if (mounted) {
+      if (!mounted) return;
+
       setState(() {
         _isLoadingManufacturers = false;
-        if (response.success) {
+        if (response.success && response.data.isNotEmpty) {
           manufacturers = response.data;
         } else {
           manufacturers = [];
+          print('API ERROR: Failed to load manufacturers from server');
           _showMessage('Failed to load manufacturers', Colors.red);
         }
       });
+    } on SocketException catch (e) {
+      print('NETWORK ERROR: No internet connection while loading manufacturers');
+      print('Error Message: $e');
+      if (!mounted) return;
+      setState(() {
+        _isLoadingManufacturers = false;
+      });
+      _showMessage('No internet connection. Please check your network and try again.', Colors.red);
+    } on TimeoutException catch (e) {
+      print('NETWORK ERROR: Request timed out while loading manufacturers');
+      print('Error Message: $e');
+      if (!mounted) return;
+      setState(() {
+        _isLoadingManufacturers = false;
+      });
+      _showMessage('No internet connection. Please check your network and try again.', Colors.red);
+    } on http.ClientException catch (e) {
+      print('NETWORK ERROR: ClientException while loading manufacturers');
+      print('Error Message: $e');
+      if (!mounted) return;
+      setState(() {
+        _isLoadingManufacturers = false;
+      });
+      _showMessage('No internet connection. Please check your network and try again.', Colors.red);
+    } catch (e, stackTrace) {
+      print('UNKNOWN ERROR: Failed to load manufacturers');
+      print('Error Message: $e');
+      print(stackTrace);
+      if (!mounted) return;
+      setState(() {
+        _isLoadingManufacturers = false;
+        manufacturers = [];
+      });
+      _showMessage('Failed to load manufacturers', Colors.red);
     }
   }
 

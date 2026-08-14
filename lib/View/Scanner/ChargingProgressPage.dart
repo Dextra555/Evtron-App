@@ -51,6 +51,9 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
   bool _invoiceFetchCompleted = false;
   bool _isHandlingNetworkInterruption = false;
   bool _retryLoopActive = false;
+  bool _hasShownPrivateCompletionDialog = false;
+  bool _isPrivateCompletionDialogVisible = false;
+  bool _isAutoCompletionSheetShowing = false;
   StreamSubscription? _connectivitySubscription;
 
   int? _currentSessionId;
@@ -308,19 +311,14 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
     ) {
       final hasConnection = results.any((r) => r != ConnectivityResult.none);
       print('📡 Connectivity changed: hasConnection=$hasConnection');
-      if (hasConnection && _isMounted && mounted && !_isSessionCompleted) {
+      if (hasConnection &&
+          _isMounted &&
+          mounted &&
+          !_isSessionCompleted &&
+          !_isRecovering &&
+          !_retryLoopActive &&
+          !_isHandlingNetworkInterruption) {
         _liveChargingController.resetNetworkFailures();
-
-        if (_retryLoopActive) {
-          print(
-            '📡 Internet returned during retry loop - dismissing dialog and checking session',
-          );
-          _retryLoopActive = false;
-          _hideLoadingDialog();
-          _isHandlingNetworkInterruption = false;
-          _checkSessionAndRecoverWithRetries();
-          return;
-        }
 
         if (_currentSessionId != null) {
           print('📡 Re-fetching after connectivity change');
@@ -459,22 +457,22 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () {
-                    _hideLoadingDialog();
-                    if (_isMounted) {
-                      Navigator.pop(context);
-                    }
-                  },
-                  child: Text(
-                    "Cancel",
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.red.shade400,
-                    ),
-                  ),
-                ),
+                // const SizedBox(height: 12),
+                // TextButton(
+                //   onPressed: () {
+                //     _hideLoadingDialog();
+                //     if (_isMounted) {
+                //       Navigator.pop(context);
+                //     }
+                //   },
+                //   child: Text(
+                //     "Cancel",
+                //     style: GoogleFonts.poppins(
+                //       fontSize: 14,
+                //       color: Colors.red.shade400,
+                //     ),
+                //   ),
+                // ),
               ],
             ),
           ),
@@ -499,7 +497,24 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
     print('📱 Loading message: $message');
   }
 
+  bool _shouldSkipInvoiceForPrivateStation(String? stationType) {
+    return (stationType ?? '').trim().toLowerCase() == 'private';
+  }
+
   void _showInvoiceBottomSheet() {
+    final stationType =
+        _liveChargingController.currentLiveData?.station?.stationType ??
+        widget.chargingDetails?['stationType']?.toString() ??
+        widget.chargingDetails?['station']?['station_type']?.toString();
+
+    if (_shouldSkipInvoiceForPrivateStation(stationType)) {
+      if (_hasShownPrivateCompletionDialog || _isPrivateCompletionDialogVisible) {
+        return;
+      }
+      _handleCompletedSessionNavigation(stationType);
+      return;
+    }
+
     if (_isInvoiceSheetShowing) return;
     _invoiceFetchCompleted = false;
     _isInvoiceSheetShowing = true;
@@ -554,7 +569,6 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
         if (_isMounted) {
           Navigator.pop(context); // close loading bottom sheet
 
-          // IMPORTANT: reset flag before opening invoice sheet
           _isInvoiceSheetShowing = false;
 
           Future.delayed(const Duration(milliseconds: 300), () {
@@ -634,6 +648,113 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
     }
   }
 
+  bool _isPrivateStationCompletion(String? stationType) {
+    return _shouldSkipInvoiceForPrivateStation(stationType);
+  }
+
+  void _handleCompletedSessionNavigation(String? stationType) {
+    if (_hasShownPrivateCompletionDialog || _isPrivateCompletionDialogVisible) {
+      return;
+    }
+
+    if (_isPrivateStationCompletion(stationType)) {
+      print('🏠 Private station completion detected - showing success dialog instead of invoice');
+      _hasShownPrivateCompletionDialog = true;
+      _isPrivateCompletionDialogVisible = true;
+      _isSessionCompleted = true;
+      _durationTimer?.cancel();
+      _liveChargingController.stopPolling();
+      stopPolling();
+      _hideLoadingDialog();
+      _showPrivateStationCompletionDialog();
+      return;
+    }
+
+    // Check if it's an automatic completion (not user-initiated stop)
+    final liveData = _liveChargingController.currentLiveData;
+    final isAutomaticCompletion = liveData != null &&
+        liveData.isCompleted &&
+        !liveData.hasError &&
+        (liveData.stopReason == null || liveData.stopReason == 'remote');
+
+    if (isAutomaticCompletion) {
+      print('⚡ Automatic charging completion detected - showing auto-completion bottom sheet');
+      _showAutoCompletionBottomSheet();
+      return;
+    }
+
+    _showInvoiceBottomSheet();
+  }
+
+  void _showPrivateStationCompletionDialog() {
+    if (!_isMounted || !mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text('Charging Completed'),
+          content: const Text(
+            'Your charging session has been completed successfully.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                _isPrivateCompletionDialogVisible = false;
+                if (Navigator.of(dialogContext).canPop()) {
+                  Navigator.of(dialogContext).pop();
+                }
+                if (_isMounted && mounted && Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    ).then((_) {
+      _isPrivateCompletionDialogVisible = false;
+    });
+  }
+
+  void _showAutoCompletionBottomSheet() {
+    if (!_isMounted || !mounted || _isAutoCompletionSheetShowing) return;
+
+    _isAutoCompletionSheetShowing = true;
+    _durationTimer?.cancel();
+    _liveChargingController.stopPolling();
+    stopPolling();
+    _hideLoadingDialog();
+
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return _AutoCompletionBottomSheetContent(
+          onClose: () {
+            _isAutoCompletionSheetShowing = false;
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+            if (_isMounted && mounted && Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+          },
+        );
+      },
+    ).then((_) {
+      _isAutoCompletionSheetShowing = false;
+    });
+  }
+
   void _showNetworkInterruptedDialog() {
     if (_isLoadingDialogShowing || !_isMounted || !mounted) return;
 
@@ -691,7 +812,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
   }
 
   Future<void> _handleNetworkInterruptionAndRetry() async {
-    if (!_isMounted || !mounted || _isHandlingNetworkInterruption) return;
+    if (!_isMounted || !mounted || _isHandlingNetworkInterruption || _isRecovering) return;
     _isHandlingNetworkInterruption = true;
     _retryLoopActive = true;
 
@@ -940,7 +1061,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
           _isSessionCompleted = true;
           _liveChargingController.stopPolling();
           _hideLoadingDialog();
-          _showInvoiceBottomSheet();
+          _handleCompletedSessionNavigation(liveData.station?.stationType);
           return;
         }
 
@@ -1144,12 +1265,14 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
   }
 
   Future<void> _checkSessionAndRecoverWithRetries() async {
-    if (!_isMounted || !mounted) return;
+    if (!_isMounted || !mounted || _isRecovering) return;
+    _isRecovering = true;
 
-    int? sessionId =
-        _currentSessionId ??
-        widget.chargingDetails?['sessionId'] ??
-        _liveChargingController.currentSessionId;
+    try {
+      int? sessionId =
+          _currentSessionId ??
+          widget.chargingDetails?['sessionId'] ??
+          _liveChargingController.currentSessionId;
 
     if (sessionId == null || sessionId <= 0) {
       try {
@@ -1159,39 +1282,42 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
       } catch (_) {}
     }
 
-    if (sessionId != null && sessionId > 0) {
-      for (int i = 0; i < 5; i++) {
-        if (!_isMounted || !mounted) return;
+      if (sessionId != null && sessionId > 0) {
+        for (int i = 0; i < 5; i++) {
+          if (!_isMounted || !mounted) return;
 
-        print('📡 Session recovery attempt ${i + 1}/5 for session $sessionId');
-        final success = await _liveChargingController.fetchLiveChargingStatus(
-          sessionId: sessionId,
-        );
+          print('📡 Session recovery attempt ${i + 1}/5 for session $sessionId');
+          final success = await _liveChargingController.fetchLiveChargingStatus(
+            sessionId: sessionId,
+          );
 
-        if (!_isMounted || !mounted) return;
+          if (!_isMounted || !mounted) return;
 
-        if (success && _liveChargingController.currentLiveData != null) {
-          final liveData = _liveChargingController.currentLiveData!;
-          if (liveData.isCompleted || liveData.hasError) {
-            print('🔴 Session completed/errored after network recovery');
-            _isSessionCompleted = true;
-            _showInvoiceBottomSheet();
-          } else {
-            print('✅ Active session recovered: $sessionId');
-            _startPolling(sessionId);
+          if (success && _liveChargingController.currentLiveData != null) {
+            final liveData = _liveChargingController.currentLiveData!;
+            if (liveData.isCompleted || liveData.hasError) {
+              print('🔴 Session completed/errored after network recovery');
+              _isSessionCompleted = true;
+              _showInvoiceBottomSheet();
+            } else {
+              print('✅ Active session recovered: $sessionId');
+              _startPolling(sessionId);
+            }
+            return;
           }
-          return;
-        }
 
-        if (i < 4) {
-          await Future.delayed(const Duration(seconds: 2));
+          if (i < 4) {
+            await Future.delayed(const Duration(seconds: 2));
+          }
         }
       }
-    }
 
-    if (_isMounted && mounted) {
-      print('📡 No active session found after recovery - navigating to map');
-      _navigateToMapScreen();
+      if (_isMounted && mounted) {
+        print('📡 No active session found after recovery - navigating to map');
+        _navigateToMapScreen();
+      }
+    } finally {
+      _isRecovering = false;
     }
   }
 
@@ -1284,7 +1410,8 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
     if (_liveChargingController.pollingStoppedByNetwork &&
         _isMounted &&
         !_isSessionCompleted &&
-        !_isHandlingNetworkInterruption) {
+        !_isHandlingNetworkInterruption &&
+        !_isRecovering) {
       print('📡 Polling stopped by network failures - triggering recovery');
       _refreshTimer?.cancel();
       _refreshTimer = null;
@@ -1305,7 +1432,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
         _liveChargingController.stopPolling();
         stopPolling();
         _hideLoadingDialog();
-        _showInvoiceBottomSheet();
+        _handleCompletedSessionNavigation(data.station?.stationType);
         return;
       }
     }
@@ -1664,8 +1791,8 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
         final prefs = await SharedPreferences.getInstance();
         sessionId =
             prefs.getInt('active_session_id') ??
-            prefs.getInt('session_id') ??
-            prefs.getInt('current_session_id');
+                prefs.getInt('session_id') ??
+                prefs.getInt('current_session_id');
         print('🔍 Stop Charging - SharedPreferences Session ID: $sessionId');
       } catch (e) {
         print('⚠️ Error reading session ID from preferences: $e');
@@ -1720,7 +1847,7 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
 
     if (shouldStop != true) return;
 
-    // Show loading dialog
+    // Show loading dialog with a timer to auto-close
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1763,38 +1890,101 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
 
     try {
       print('📤 Calling stop charging API with session ID: $sessionId');
-      final success = await _stopChargingController.stopChargingSession(
+
+      // Use a timeout to prevent infinite loading
+      final stopResult = await _stopChargingController.stopChargingSession(
         sessionId: sessionId,
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          print('⏰ Stop charging request timed out');
+          return false;
+        },
       );
 
-      if (_isMounted) {
-        Navigator.pop(context);
+      print('📥 Stop charging response received:');
+      print('   • Result: $stopResult');
+      final stopResponse = _stopChargingController.stopResponse;
+      if (stopResponse != null) {
+        print('   • Success: ${stopResponse.success}');
+        print('   • Message: ${stopResponse.message}');
+        final data = stopResponse.data;
+        if (data != null) {
+          print('   • Session ID: ${data.sessionId}');
+          print('   • Transaction ID: ${data.transactionId}');
+          print('   • Status: ${data.status}');
+          print('   • Duration: ${data.formattedDuration}');
+          print('   • Energy: ${data.formattedEnergy}');
+          print('   • Cost: ${data.formattedCost}');
+          print('   • Wallet Balance: ₹${data.walletBalanceAfter}');
+        } else {
+          print('   • Data: null');
+        }
+      } else {
+        print('   • stopResponse: null');
       }
 
-      if (success && _isMounted) {
+      // ✅ CRITICAL FIX: Always close the loading dialog FIRST
+      if (_isMounted && context.mounted) {
+        try {
+          Navigator.of(context, rootNavigator: true).pop();
+        } catch (e) {
+          print('⚠️ Error closing loading dialog: $e');
+        }
+      }
+
+      if (stopResult && _isMounted) {
+        // Success - stop polling and show invoice
         _liveChargingController.stopPolling();
         stopPolling();
         _durationTimer?.cancel();
         _isSessionCompleted = true;
-        _showInvoiceBottomSheet();
+
+        // Clear session data
+        await ChargingSessionService.clearActiveSession();
+
+        // Show success message
+        if (_isMounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Charging session stopped successfully"),
+              backgroundColor: Appcolor.green,
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+
+        // Small delay before showing invoice to ensure UI updates
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        if (_isMounted) {
+          _showInvoiceBottomSheet();
+        }
       } else if (_isMounted) {
-        // If stop failed, try to clear session anyway if it's already completed
-        final errorMsg =
-            _stopChargingController.errorMessage?.toLowerCase() ?? '';
+        // If stop failed, check if session is already completed
+        final errorMsg = _stopChargingController.errorMessage?.toLowerCase() ?? '';
 
         if (errorMsg.contains('not found') ||
             errorMsg.contains('already') ||
-            errorMsg.contains('completed')) {
+            errorMsg.contains('completed') ||
+            errorMsg.contains('inactive')) {
           // Session is already stopped or invalid - show invoice
-          print(
-            '⚠️ Session already completed or not found - proceeding to invoice',
-          );
+          print('⚠️ Session already completed or not found - proceeding to invoice');
           _liveChargingController.stopPolling();
           stopPolling();
           _durationTimer?.cancel();
           _isSessionCompleted = true;
-          _showInvoiceBottomSheet();
+
+          // Clear session data
+          await ChargingSessionService.clearActiveSession();
+
+          await Future.delayed(const Duration(milliseconds: 300));
+
+          if (_isMounted) {
+            _showInvoiceBottomSheet();
+          }
         } else {
+          // Show error message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -1802,21 +1992,31 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
                     "Failed to stop charging",
               ),
               backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
             ),
           );
         }
       }
     } catch (e) {
       print('❌ Error in _stopCharging: $e');
-      if (_isMounted) {
-        Navigator.pop(context);
 
+      // ✅ CRITICAL FIX: Always close the loading dialog even on error
+      if (_isMounted && context.mounted) {
+        try {
+          Navigator.of(context, rootNavigator: true).pop();
+        } catch (e) {
+          print('⚠️ Error closing loading dialog: $e');
+        }
+      }
+
+      if (_isMounted) {
         if (e.toString().contains('SocketException') ||
             e.toString().contains('TimeoutException')) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text("Network error. Please check your connection."),
               backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
             ),
           );
         } else {
@@ -1824,10 +2024,14 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
             SnackBar(
               content: Text("Error: ${e.toString()}"),
               backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
             ),
           );
         }
       }
+    } finally {
+      // Ensure loading state is reset
+      _stopChargingController.reset();
     }
   }
 
@@ -2542,5 +2746,166 @@ class _ChargingProgressPageState extends State<ChargingProgressPage>
   }
 }
 
+class _AutoCompletionBottomSheetContent extends StatefulWidget {
+  final VoidCallback onClose;
 
+  const _AutoCompletionBottomSheetContent({
+    required this.onClose,
+  });
 
+  @override
+  State<_AutoCompletionBottomSheetContent> createState() =>
+      _AutoCompletionBottomSheetContentState();
+}
+
+class _AutoCompletionBottomSheetContentState
+    extends State<_AutoCompletionBottomSheetContent>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _slideAnimation;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+
+    _slideAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
+
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, 1),
+        end: Offset.zero,
+      ).animate(
+        CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+      ),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(30),
+            topRight: Radius.circular(30),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Close button
+              Align(
+                alignment: Alignment.topRight,
+                child: GestureDetector(
+                  onTap: widget.onClose,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.grey.shade100,
+                    ),
+                    child: Icon(
+                      Icons.close,
+                      color: Colors.grey.shade700,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Animated checkmark icon
+              ScaleTransition(
+                scale: _scaleAnimation,
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Appcolor.green.withOpacity(0.1),
+                  ),
+                  child: Icon(
+                    Icons.check_circle,
+                    size: 60,
+                    color: Appcolor.green,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Title
+              Text(
+                'Charging Completed',
+                style: GoogleFonts.poppins(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: Appcolor.black,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+
+              // Message
+              Text(
+                'Your charging session has been completed successfully.',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                  color: Colors.grey.shade600,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+
+              // Action button
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: widget.onClose,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Appcolor.green,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: Text(
+                    'Done',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

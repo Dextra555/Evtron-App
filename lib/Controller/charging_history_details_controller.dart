@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 
 import '../Model/charging_history_details_model.dart';
 import '../Service/api_endpoints.dart';
@@ -20,7 +21,7 @@ class ChargingHistoryDetailsController {
       print("Token: $token");
       print("================================");
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(url),
         headers: {
           "Accept": "application/json",

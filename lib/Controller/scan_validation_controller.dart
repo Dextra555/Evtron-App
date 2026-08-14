@@ -1,4 +1,3 @@
-// lib/Controller/scan_validation_controller.dart
 
 import 'package:flutter/material.dart';
 import 'package:evtron/Model/scan_validation_model.dart';

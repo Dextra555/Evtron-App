@@ -13,43 +13,122 @@ class LargeChargerMarker {
     String status = 'available',
     bool hasFault = false,
     bool hasOffline = false,
-  }) async
-  {
-    final cacheKey = '${available}_${total}_${isAvailable}_${status}_${hasFault}_${hasOffline}';
+    int inUse = 0,
+    int fault = 0,
+    int offline = 0,
+  }) async {
+    print('🎨 Creating marker with:');
+    print('   Available: $available');
+    print('   Total: $total');
+    print('   isAvailable: $isAvailable');
+    print('   status: $status');
+    print('   hasFault: $hasFault');
+    print('   hasOffline: $hasOffline');
+
+    final cacheKey = '${available}_${total}_${isAvailable}_${status}_${hasFault}_${hasOffline}_${inUse}_${fault}_${offline}';
 
     if (_cache.containsKey(cacheKey)) {
+      print('✅ Using cached marker');
       return _cache[cacheKey]!;
     }
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    const Size size = Size(85, 110);
+    const Size size = Size(100, 160);
 
     Color markerColor;
 
-    if (hasFault || hasOffline) {
+    if (available > 0) {
+      markerColor = const Color(0xFF1DBA2C);
+    } else if (inUse > 0) {
+      markerColor = Colors.blue;
+    } else if (fault > 0 && fault == total && available == 0 && inUse == 0) {
+      markerColor = Colors.red;
+    } else if (offline > 0 && offline == total && available == 0 && inUse == 0) {
+      markerColor = Colors.grey.shade600;
+    } else if ((offline > 0 || fault > 0) && available == 0 && inUse == 0) {
+      markerColor = Colors.grey.shade600;
+    } else if (hasFault || hasOffline) {
+      markerColor = Colors.grey.shade600;
+    } else if (status == 'busy' && available > 0) {
       markerColor = Colors.orange;
-    }
-    // Check if station is busy even though chargers are available
-    else if (status == 'busy' && available > 0) {
-      markerColor = Colors.grey.shade600; // Grey - chargers available but station is busy
-    }
-    // Check if any charger is actually available and the station should be treated as available
-    else if (available > 0 && isAvailable) {
-      markerColor = const Color(0xFF1DBA2C); // Green - has available chargers
-    }
-    // No available chargers
-    else {
-      markerColor = Colors.red; // Red - no chargers available
+    } else if (available > 0 && isAvailable) {
+      markerColor = const Color(0xFF1DBA2C);
+    } else {
+      markerColor = Colors.blue;
     }
 
-    // Shadow - adjusted coordinates
+    print('   Marker Color: $markerColor');
+
+    // Shadow
     canvas.drawOval(
-      const Rect.fromLTWH(25, 95, 35, 7),
+      const Rect.fromLTWH(25, 125, 35, 7),
       Paint()
         ..color = Colors.black.withOpacity(0.25)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+
+    final countText = '$available/$total';
+    final boxWidth = 62.0;
+    final boxHeight = 26.0;
+    final boxX = 42.5 - (boxWidth / 2);
+    final boxY = 0.0;
+
+    print('   Box Text: $countText');
+
+    // Box shadow
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(boxX + 1, boxY + 1, boxWidth, boxHeight),
+        const Radius.circular(5),
+      ),
+      Paint()
+        ..color = Colors.black.withOpacity(0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+
+    // White box background
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(boxX, boxY, boxWidth, boxHeight),
+        const Radius.circular(5),
+      ),
+      Paint()..color = Colors.white,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(boxX, boxY, boxWidth, boxHeight),
+        const Radius.circular(5),
+      ),
+      Paint()
+        ..color = markerColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0,
+    );
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: countText,
+        style: TextStyle(
+          color: markerColor,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          fontFamily: 'Roboto',
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+
+    textPainter.layout();
+
+    textPainter.paint(
+      canvas,
+      Offset(
+        42.5 - textPainter.width / 2,
+        boxY + (boxHeight - textPainter.height) / 2,
+      ),
     );
 
     final Paint pinPaint = Paint()
@@ -58,83 +137,76 @@ class LargeChargerMarker {
 
     final Path pinPath = Path();
 
-    // Pin shape - all coordinates adjusted proportionally (about 65%)
-    pinPath.moveTo(42.5, 5);
+    pinPath.moveTo(42.5, 28);
 
     pinPath.cubicTo(
       16.25,
-      5,
+      28,
       6.5,
-      26,
+      49,
       13,
-      51,
+      74,
     );
 
     pinPath.cubicTo(
       18.2,
-      70,
+      93,
       31.2,
-      83,
+      106,
       42.5,
-      100,
+      123,
     );
 
     pinPath.cubicTo(
       53.8,
-      83,
+      106,
       66.8,
-      70,
+      93,
       72,
-      51,
+      74,
     );
 
     pinPath.cubicTo(
       78.5,
-      26,
+      49,
       68.75,
-      5,
+      28,
       42.5,
-      5,
+      28,
     );
 
     pinPath.close();
 
     canvas.drawPath(pinPath, pinPaint);
 
-    // Top rounded area
     canvas.drawCircle(
-      const Offset(42.5, 38),
+      const Offset(42.5, 61),
       27,
       pinPaint,
     );
 
-    /// FUEL PUMP ICON - adjusted coordinates
     final Paint whitePaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;
 
-    // Main body
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTWH(29, 27, 18, 27),
+        const Rect.fromLTWH(29, 50, 18, 27),
         const Radius.circular(3),
       ),
       whitePaint,
     );
 
-    // Display cutout
     canvas.drawRect(
-      const Rect.fromLTWH(32, 31, 12, 7),
+      const Rect.fromLTWH(32, 54, 12, 7),
       Paint()..color = markerColor,
     );
 
-    // Bottom stand
     canvas.drawRect(
-      const Rect.fromLTWH(26, 60, 28, 3),
+      const Rect.fromLTWH(26, 83, 28, 3),
       whitePaint,
     );
 
-    /// Hose - adjusted coordinates
     final hosePaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.stroke
@@ -143,73 +215,19 @@ class LargeChargerMarker {
       ..strokeJoin = StrokeJoin.round;
 
     final hosePath = Path()
-      ..moveTo(47, 38)
-      ..quadraticBezierTo(58, 39, 58, 51)
-      ..lineTo(58, 58)
-      ..quadraticBezierTo(58, 66, 52, 66);
+      ..moveTo(47, 61)
+      ..quadraticBezierTo(58, 62, 58, 74)
+      ..lineTo(58, 81)
+      ..quadraticBezierTo(58, 89, 52, 89);
 
     canvas.drawPath(hosePath, hosePaint);
 
-    // Nozzle
     canvas.drawLine(
-      const Offset(52, 66),
-      const Offset(56, 62),
+      const Offset(52, 89),
+      const Offset(56, 85),
       hosePaint,
     );
 
-    /// COUNT BADGE - adjusted coordinates
-    if (available > 0) {
-      // Badge shadow
-      canvas.drawCircle(
-        const Offset(62, 18),
-        12,
-        Paint()
-          ..color = Colors.black.withOpacity(.15)
-          ..maskFilter = const MaskFilter.blur(
-            BlurStyle.normal,
-            2,
-          ),
-      );
-
-      // White badge
-      canvas.drawCircle(
-        const Offset(61, 17),
-        12,
-        Paint()..color = Colors.white,
-      );
-
-      // Border
-      canvas.drawCircle(
-        const Offset(61, 17),
-        12,
-        Paint()
-          ..color = markerColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5,
-      );
-
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: '$available',
-          style: TextStyle(
-            color: markerColor,
-            fontSize: available > 9 ? 10 : 13,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      );
-
-      textPainter.layout();
-
-      textPainter.paint(
-        canvas,
-        Offset(
-          61 - textPainter.width / 2,
-          17 - textPainter.height / 2,
-        ),
-      );
-    }
 
     final image = await recorder.endRecording().toImage(
       size.width.toInt(),
@@ -226,9 +244,11 @@ class LargeChargerMarker {
       );
 
       _cache[cacheKey] = marker;
+      print('✅ Marker created and cached');
       return marker;
     }
 
+    print('⚠️ Failed to create marker, using default');
     return BitmapDescriptor.defaultMarker;
   }
 
@@ -236,4 +256,5 @@ class LargeChargerMarker {
     _cache.clear();
   }
 }
+
 

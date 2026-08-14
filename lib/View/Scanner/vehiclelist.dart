@@ -295,7 +295,7 @@ class _VehicleScreenState extends State<VehicleScreen> {
         String? errorCode,
         List<ErrorAction>? actions,
       }) {
-    title ??= 'Charging Failed';
+    title ??= '';
     icon ??= Icons.error_outline;
     iconColor ??= Colors.red;
 
@@ -342,54 +342,6 @@ class _VehicleScreenState extends State<VehicleScreen> {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                if (failedCheck != null || errorCode != null) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (failedCheck != null)
-                          Row(
-                            children: [
-                              Icon(Icons.info_outline, size: 14, color: Colors.grey.shade600),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  'Error: $failedCheck',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        if (errorCode != null)
-                          Row(
-                            children: [
-                              Icon(Icons.code, size: 14, color: Colors.grey.shade600),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  'Code: $errorCode',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 24),
                 if (actions != null && actions.isNotEmpty)
                   ..._buildActionButtons(actions),
@@ -414,7 +366,16 @@ class _VehicleScreenState extends State<VehicleScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                Navigator.pop(context);
+                if (action.action == 'retry') {
+                  if (Navigator.of(context, rootNavigator: true).canPop()) {
+                    Navigator.of(context, rootNavigator: true).pop();
+                  }
+                  return;
+                }
+
+                if (Navigator.of(context, rootNavigator: true).canPop()) {
+                  Navigator.of(context, rootNavigator: true).pop();
+                }
                 _handleAction(action.action);
               },
               style: ElevatedButton.styleFrom(
@@ -441,7 +402,16 @@ class _VehicleScreenState extends State<VehicleScreen> {
             width: double.infinity,
             child: OutlinedButton(
               onPressed: () {
-                Navigator.pop(context);
+                if (action.action == 'retry') {
+                  if (Navigator.of(context, rootNavigator: true).canPop()) {
+                    Navigator.of(context, rootNavigator: true).pop();
+                  }
+                  return;
+                }
+
+                if (Navigator.of(context, rootNavigator: true).canPop()) {
+                  Navigator.of(context, rootNavigator: true).pop();
+                }
                 _handleAction(action.action);
               },
               style: OutlinedButton.styleFrom(
@@ -482,7 +452,9 @@ class _VehicleScreenState extends State<VehicleScreen> {
         Navigator.pop(context);
         break;
       case 'retry':
-        _startCharging();
+        if (Navigator.of(context, rootNavigator: true).canPop()) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
         break;
       case 'go_back':
       default:

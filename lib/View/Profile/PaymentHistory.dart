@@ -24,7 +24,6 @@ class PaymentHistory extends StatefulWidget {
 }
 
 class _PaymentHistoryState extends State<PaymentHistory> {
-  // Track loading states for each transaction by ID
   final Map<int, bool> _downloadLoadingStates = {};
 
   String _formatDate(String dateString) {

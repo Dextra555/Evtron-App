@@ -45,20 +45,13 @@ class StopChargingController extends ChangeNotifier {
       print('   • Message: ${response.message}');
       print('   • Has Data: ${response.data != null}');
 
-      // ✅ FIX: Check only success flag, not data presence
+      // ✅ FIX: Always clear session data regardless of success
+      // This ensures the session is cleaned up even if the API response is delayed
+      await ChargingSessionService.clearActiveSession();
+      await _clearChargingStatusData();
+
       if (response.success) {
         _stopResponse = response;
-
-        // 🔴 CRITICAL: Clear the active charging session from SharedPreferences
-        print('\n🔍 Clearing active charging session...');
-
-        // Clear all session-related data
-        await ChargingSessionService.clearActiveSession();
-
-        // Also clear any other charging status data
-        await _clearChargingStatusData();
-
-        print('✅ Active charging session cleared successfully');
 
         print('\n✅ CHARGING SESSION STOPPED SUCCESSFULLY!');
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -87,19 +80,17 @@ class StopChargingController extends ChangeNotifier {
         // Even if the API returns an error, we might still want to clear the session
         final errorMsg = response.message?.toLowerCase() ?? '';
 
-        if (errorMsg.contains('already') == true ||
-            errorMsg.contains('not found') == true ||
-            errorMsg.contains('inactive') == true ||
-            errorMsg.contains('completed') == true) {
-          print('⚠️ Session appears to be already stopped or invalid. Clearing active session...');
-          await ChargingSessionService.clearActiveSession();
-          await _clearChargingStatusData();
+        // Consider these as "session already stopped" cases
+        if (errorMsg.contains('already') ||
+            errorMsg.contains('not found') ||
+            errorMsg.contains('inactive') ||
+            errorMsg.contains('completed')) {
+          print('⚠️ Session appears to be already stopped or invalid.');
 
-          // ✅ Return true so invoice shows for already stopped session
           _isLoading = false;
           _isStopping = false;
           notifyListeners();
-          return true;
+          return true; // ✅ Return true to proceed with invoice
         }
 
         _isLoading = false;
@@ -112,14 +103,16 @@ class StopChargingController extends ChangeNotifier {
       print('\n❌ EXCEPTION in Controller:');
       print('   • Error: $e');
 
-      // Check for specific network errors
+      // Always clear session data on any exception
+      await ChargingSessionService.clearActiveSession();
+      await _clearChargingStatusData();
+
       if (e.toString().contains('SocketException') ||
           e.toString().contains('TimeoutException')) {
         _errorMessage = 'Network error. Please check your internet connection and try again.';
-        print('⚠️ Network error occurred - keeping session active for retry');
+        print('⚠️ Network error occurred - session cleared');
       } else if (e.toString().contains('401') || e.toString().contains('unauthorized')) {
         _errorMessage = 'Session expired. Please login again.';
-        await ChargingSessionService.clearActiveSession();
         print('⚠️ Unauthorized error - cleared active session');
       } else {
         _errorMessage = 'Failed to stop charging: ${e.toString()}';
@@ -131,7 +124,6 @@ class StopChargingController extends ChangeNotifier {
       return false;
     }
   }
-
   // Helper method to clear all charging status data
   Future<void> _clearChargingStatusData() async {
     try {

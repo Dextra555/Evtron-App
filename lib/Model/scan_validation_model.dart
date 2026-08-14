@@ -88,6 +88,11 @@ class ScanValidationResponse {
       return errorMessages;
     }
 
+    // PRIORITY: Always use error.description if available
+    if (errorDescription != null && errorDescription!.isNotEmpty) {
+      return errorDescription!;
+    }
+
     // Check if it's a failed_check case
     if (failedCheck != null) {
       switch (failedCheck) {
@@ -99,12 +104,24 @@ class ScanValidationResponse {
           return 'Connector type not supported. Please use a compatible charger.';
         case 'ocpp_offline':
           return 'Charger is offline. Please ensure the charger is powered on and connected.';
+        case 'charger_access_denied':
+          return 'You do not have access to this charger.';
         case 'connector_not_available':
           return _getConnectorNotAvailableMessage(errorCode, message);
         case 'active_session_exists':
           return 'You already have an active charging session. Please stop it before starting a new one.';
         case 'wallet_balance_insufficient':
           return _getBalanceInsufficientMessage(message);
+        default:
+          return message;
+      }
+    }
+
+    // Check if it's an error code case without failedCheck (e.g., 403 responses)
+    if (errorCode != null) {
+      switch (errorCode) {
+        case 'CHARGER_ACCESS_DENIED':
+          return 'User does not have access to this charger';
         default:
           return message;
       }
@@ -153,6 +170,8 @@ class ScanValidationResponse {
           return Icons.bolt_outlined;
         case 'ocpp_offline':
           return Icons.signal_wifi_off;
+        case 'charger_access_denied':
+          return Icons.block;
         case 'connector_not_available':
           if (errorCode == 'CONNECTOR_CHARGING') {
             return Icons.charging_station;
@@ -169,6 +188,10 @@ class ScanValidationResponse {
           return Icons.error_outline;
       }
     }
+    // Check if it's an error code case without failedCheck
+    if (errorCode == 'CHARGER_ACCESS_DENIED') {
+      return Icons.block;
+    }
     return Icons.error_outline;
   }
 
@@ -184,6 +207,8 @@ class ScanValidationResponse {
           return Colors.red;
         case 'ocpp_offline':
           return Colors.orange;
+        case 'charger_access_denied':
+          return Colors.red;
         case 'connector_not_available':
           if (errorCode == 'CONNECTOR_CHARGING') {
             return Colors.orange;
@@ -200,6 +225,10 @@ class ScanValidationResponse {
           return Colors.red;
       }
     }
+    // Check if it's an error code case without failedCheck
+    if (errorCode == 'CHARGER_ACCESS_DENIED') {
+      return Colors.red;
+    }
     return Colors.red;
   }
 
@@ -215,6 +244,8 @@ class ScanValidationResponse {
           return 'Invalid Connector';
         case 'ocpp_offline':
           return 'Charger Offline';
+        case 'charger_access_denied':
+          return 'Access Denied';
         case 'connector_not_available':
           if (errorCode == 'CONNECTOR_CHARGING') return 'Connector In Use';
           if (errorCode == 'CONNECTOR_FAULTED') return 'Connector Faulted';
@@ -226,10 +257,14 @@ class ScanValidationResponse {
         case 'wallet_balance_insufficient':
           return 'Insufficient Balance';
         default:
-          return 'Charging Failed';
+          return '';
       }
     }
-    return 'Charging Failed';
+    // Check if it's an error code case without failedCheck
+    if (errorCode == 'CHARGER_ACCESS_DENIED') {
+      return 'Access Denied';
+    }
+    return '';
   }
 }
 

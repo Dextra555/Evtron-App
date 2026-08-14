@@ -8,9 +8,18 @@ import '../../Service/active_session_service.dart';
 import '../Scanner/ChargingProgressPage.dart';
 
 class MapButtonsController {
-  final Function()? refreshSession;
+  final Future<void> Function()? refreshSession;
+  final Future<void> Function()? refreshStations;
 
-  MapButtonsController({this.refreshSession});
+  MapButtonsController({this.refreshSession, this.refreshStations});
+
+  Future<void> refreshMapView() async {
+    await refreshStations?.call();
+  }
+
+  Future<void> refreshSessionState() async {
+    await refreshSession?.call();
+  }
 }
 
 class MapButtons extends StatefulWidget {
@@ -20,8 +29,9 @@ class MapButtons extends StatefulWidget {
   final VoidCallback onZoomIn;
   final Function(int? sessionId)? onNavigate;
   final Function(MapButtonsController)? onControllerCreated;
-  final VoidCallback? onRefreshStations;
+  final Future<void> Function()? onRefreshStations;
   final LiveChargingController? chargingController;
+  final Future<void> Function()? onRefresh;
 
   const MapButtons({
     Key? key,
@@ -33,6 +43,7 @@ class MapButtons extends StatefulWidget {
     this.onControllerCreated,
     this.onRefreshStations,
     this.chargingController,
+    this.onRefresh,
   }) : super(key: key);
 
   @override
@@ -46,6 +57,7 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
   Timer? _refreshTimer;
   LiveChargingController? _controller;
   bool _isChecking = false;
+  bool _isHandlingActiveSessionTap = false;
   DateTime? _lastSessionCheckTime;
   static const Duration _minCheckInterval = Duration(seconds: 5);
   int _consecutiveFailures = 0;
@@ -67,6 +79,7 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
   bool _isUpdating = false;
   bool _isRefreshing = false;
   Timer? _updateDebounceTimer;
+  bool _isRefreshingStations = false;
 
   static const List<String> _activeStatuses = [
     'charging',
@@ -224,6 +237,7 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
     if (widget.onControllerCreated != null) {
       widget.onControllerCreated!(MapButtonsController(
         refreshSession: _checkActiveSession,
+        refreshStations: _onRefreshPressed,
       ));
     }
 
@@ -232,8 +246,27 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
     }
   }
 
-  // ==================== UPDATE SESSION STATE FROM CONTROLLER ====================
-// In MapButtonsState - Update _updateSessionStateFromController
+  Future<void> _onRefreshPressed() async {
+    if (_isRefreshingStations) return;
+
+    setState(() {
+      _isRefreshingStations = true;
+    });
+
+    try {
+      if (widget.onRefresh != null) {
+        await widget.onRefresh!();
+      } else if (widget.onRefreshStations != null) {
+        await widget.onRefreshStations!();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshingStations = false;
+        });
+      }
+    }
+  }
 
   void _updateSessionStateFromController() {
     if (_isUpdating) return;
@@ -636,61 +669,81 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
   }
 
 
-  void _handleActiveSessionTap() {
-    int? sessionId = _activeSessionId;
+  Future<void> _handleActiveSessionTap() async {
+    if (_isHandlingActiveSessionTap) {
+      print('⏳ Active session tap is already being processed');
+      return;
+    }
 
-    // ✅ Show vehicle info when tapping with vehicle details
-    if (_vehicleName.isNotEmpty && _vehicleName != 'Unknown Vehicle') {
-      // Show a nice snackbar with vehicle info
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.directions_car, color: Colors.white, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '$_vehicleName • $_vehicleRegistration',
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                  overflow: TextOverflow.ellipsis,
+    _isHandlingActiveSessionTap = true;
+    if (mounted) {
+      setState(() {});
+    }
+
+    try {
+      int? sessionId = _activeSessionId;
+
+      if (_vehicleName.isNotEmpty && _vehicleName != 'Unknown Vehicle') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.directions_car, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '$_vehicleName • $_vehicleRegistration',
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
-    }
-
-    if (sessionId == null && _controller != null) {
-      final rawId = _controller!.currentSessionId;
-      if (rawId != null && rawId > 0) {
-        sessionId = rawId is int ? rawId : int.tryParse(rawId.toString());
+        );
       }
-    }
 
-    if (sessionId == null) {
-      _getSessionIdFromStorage().then((storedId) {
+      if (sessionId == null && _controller != null) {
+        final rawId = _controller!.currentSessionId;
+        if (rawId != null && rawId > 0) {
+          sessionId = rawId is int ? rawId : int.tryParse(rawId.toString());
+        }
+      }
+
+      if (sessionId == null) {
+        final storedId = await _getSessionIdFromStorage();
         if (storedId != null && mounted) {
-          _navigateToChargingProgress(storedId);
+          await _navigateToChargingProgress(storedId);
         } else {
           _showNoSessionError();
         }
-      });
-      return;
-    }
+        return;
+      }
 
-    if (sessionId <= 0) {
+      if (sessionId <= 0) {
+        _showNoSessionError();
+        return;
+      }
+
+      await _navigateToChargingProgress(sessionId);
+    } catch (e) {
+      print('❌ Error handling active session tap: $e');
       _showNoSessionError();
-      return;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isHandlingActiveSessionTap = false;
+        });
+      } else {
+        _isHandlingActiveSessionTap = false;
+      }
     }
-
-    _navigateToChargingProgress(sessionId);
   }
 
   Future<int?> _getSessionIdFromStorage() async {
@@ -722,7 +775,7 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
 
 // In MapButtonsState - Update _navigateToChargingProgress
 
-  void _navigateToChargingProgress(int sessionId) {
+  Future<void> _navigateToChargingProgress(int sessionId) async {
     print('🔄 Navigating to ChargingProgress with sessionId: $sessionId');
     print('   Vehicle: $_vehicleName');
     print('   Registration: $_vehicleRegistration');
@@ -730,10 +783,12 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
     print('   Model: $_vehicleModel');
 
     if (widget.onNavigate != null) {
-      // Pass vehicle details along with session ID
-      widget.onNavigate!(sessionId);
+      final result = widget.onNavigate!(sessionId);
+      if (result is Future) {
+        await result;
+      }
     } else {
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => ChargingProgressPage(
@@ -789,6 +844,20 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
     return Column(
       children: [
         _circleButton(
+          icon: _isRefreshingStations ? Icons.hourglass_top_rounded : Icons.refresh,
+          onPressed: _isRefreshingStations ? () {} : () {
+            unawaited(_onRefreshPressed());
+          },
+          color: Colors.white,
+          backgroundColor: _isRefreshingStations
+              ? Colors.green.withOpacity(0.75)
+              : buttonBackgroundColor,
+          splashColor: buttonSplashColor,
+          highlightColor: buttonHighlightColor,
+          isLoading: _isRefreshingStations,
+        ),
+        const SizedBox(height: 10),
+        _circleButton(
           icon: Icons.my_location,
           onPressed: _onMyLocationPressed,
           color: Colors.white,
@@ -805,24 +874,24 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
           splashColor: buttonSplashColor,
           highlightColor: buttonHighlightColor,
         ),
-        const SizedBox(height: 10),
-        _circleButton(
-          icon: Icons.add,
-          onPressed: widget.onZoomIn,
-          color: Colors.white,
-          backgroundColor: buttonBackgroundColor,
-          splashColor: buttonSplashColor,
-          highlightColor: buttonHighlightColor,
-        ),
-        const SizedBox(height: 10),
-        _circleButton(
-          icon: Icons.remove,
-          onPressed: widget.onZoomOut,
-          color: Colors.white,
-          backgroundColor: buttonBackgroundColor,
-          splashColor: buttonSplashColor,
-          highlightColor: buttonHighlightColor,
-        ),
+        // const SizedBox(height: 10),
+        // _circleButton(
+        //   icon: Icons.add,
+        //   onPressed: widget.onZoomIn,
+        //   color: Colors.white,
+        //   backgroundColor: buttonBackgroundColor,
+        //   splashColor: buttonSplashColor,
+        //   highlightColor: buttonHighlightColor,
+        // ),
+        // const SizedBox(height: 10),
+        // _circleButton(
+        //   icon: Icons.remove,
+        //   onPressed: widget.onZoomOut,
+        //   color: Colors.white,
+        //   backgroundColor: buttonBackgroundColor,
+        //   splashColor: buttonSplashColor,
+        //   highlightColor: buttonHighlightColor,
+        // ),
         const SizedBox(height: 10),
         // Show active session button ONLY if genuinely active
         if (_hasActiveSession && _shouldShowActiveButton(_sessionStatus)) ...[
@@ -833,7 +902,7 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
     );
   }
 
-  // ==================== BUILD ACTIVE SESSION BUTTON ====================
+
   Widget _buildActiveSessionButton() {
     final isSuspended = _sessionStatus?.toLowerCase() == 'suspended';
     final buttonColor = isSuspended ? Colors.orange : Colors.green;
@@ -844,10 +913,12 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
         ? '$_vehicleName • $_vehicleRegistration'
         : 'Active Charging Session';
 
+    final isProcessingTap = _isHandlingActiveSessionTap;
+
     return Tooltip(
       message: tooltip,
       child: GestureDetector(
-        onTap: _handleActiveSessionTap,
+        onTap: isProcessingTap ? null : () => unawaited(_handleActiveSessionTap()),
         child: AnimatedBuilder(
           animation: _pulseController!,
           builder: (context, child) {
@@ -875,7 +946,7 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    onTap: _handleActiveSessionTap,
+                    onTap: isProcessingTap ? null : () => unawaited(_handleActiveSessionTap()),
                     customBorder: const CircleBorder(),
                     splashColor: Colors.white.withOpacity(0.3),
                     highlightColor: Colors.white.withOpacity(0.2),
@@ -883,17 +954,26 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
                       width: 48,
                       height: 48,
                       alignment: Alignment.center,
-                      child: isSuspended
-                          ? const Icon(
-                        Icons.pause_circle_outline,
-                        color: Colors.white,
-                        size: 28,
+                      child: isProcessingTap
+                          ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: Colors.white,
+                        ),
                       )
-                          : const Icon(
-                        Icons.directions_car,
-                        color: Colors.white,
-                        size: 24,
-                      ),
+                          : isSuspended
+                              ? const Icon(
+                            Icons.pause_circle_outline,
+                            color: Colors.white,
+                            size: 28,
+                          )
+                              : const Icon(
+                            Icons.directions_car,
+                            color: Colors.white,
+                            size: 24,
+                          ),
                     ),
                   ),
                 ),
@@ -913,6 +993,7 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
     required Color backgroundColor,
     required Color splashColor,
     required Color highlightColor,
+    bool isLoading = false,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -937,7 +1018,16 @@ class MapButtonsState extends State<MapButtons> with SingleTickerProviderStateMi
             width: 40,
             height: 40,
             alignment: Alignment.center,
-            child: Icon(
+            child: isLoading
+                ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            )
+                : Icon(
               icon,
               color: color,
               size: 20,

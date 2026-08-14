@@ -268,8 +268,34 @@ class LiveChargingData {
   }
 
   bool get hasError {
-    final errorStatuses = ['error', 'failed', 'timeout', 'interrupted'];
-    return errorStatuses.contains(status.toLowerCase());
+    final statusLower = status.toLowerCase();
+    final errorStatuses = ['error', 'failed', 'timeout'];
+    
+    // These statuses are always errors
+    if (errorStatuses.contains(statusLower)) {
+      return true;
+    }
+    
+    // Special handling for 'interrupted' status
+    // It's only an error if it's a genuine charger failure
+    if (statusLower == 'interrupted') {
+      // Check if it's an actual charger fault/failure stop reason
+      final chargerFaultReasons = [
+        'DeAuthorized',
+        'ocpp_connector_faulted',
+        'charger_disconnected',
+      ];
+      // Only treat as error if stop reason indicates a charger fault
+      if (stopReason != null && chargerFaultReasons.contains(stopReason)) {
+        return true;
+      }
+      // Otherwise, treat 'interrupted' as a normal completion (not an error)
+      // This covers: stopReason == null (default), 'local', 'remote', 
+      // 'EmergencyStop', 'ocpp_connector_available', etc.
+      return false;
+    }
+    
+    return false;
   }
 
   bool get shouldShowCompletionSheet {
@@ -846,19 +872,26 @@ class StationInfo {
   final int id;
   final String name;
   final String? city;
+  final String stationType;
 
   StationInfo({
     required this.id,
     required this.name,
     this.city,
+    this.stationType = 'public',
   });
 
   factory StationInfo.fromJson(Map<String, dynamic> json) {
     try {
+      final stationType = json['station_type']?.toString() ??
+          json['stationType']?.toString() ??
+          'public';
+
       return StationInfo(
         id: _safeToInt(json['id']),
         name: json['name']?.toString() ?? '',
         city: json['city']?.toString(),
+        stationType: stationType,
       );
     } catch (e) {
       print('⚠️ Error parsing StationInfo: $e');
@@ -871,8 +904,11 @@ class StationInfo {
       id: 0,
       name: '',
       city: null,
+      stationType: 'public',
     );
   }
+
+  bool get isPrivate => stationType.toLowerCase() == 'private';
 
   static int _safeToInt(dynamic value, {int defaultValue = 0}) {
     if (value == null) return defaultValue;

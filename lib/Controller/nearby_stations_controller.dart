@@ -6,6 +6,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/nearby_stations_model.dart';
 import '../Service/WishlistService.dart';
@@ -261,7 +262,7 @@ class NearbyStationsController extends ChangeNotifier {
       print('╚════════════════════════════════════════════════════════════╝');
 
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         url,
         headers: {
           'Authorization': 'Bearer $token',
@@ -480,7 +481,7 @@ class NearbyStationsController extends ChangeNotifier {
 
       print('🔗 URL: $url\n');
 
-      final response = await http.get(url).timeout(
+      final response = await NetworkService.get(url).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           throw TimeoutException('Google Places API timeout');
@@ -577,7 +578,7 @@ class NearbyStationsController extends ChangeNotifier {
           '$DISTANCE_MATRIX_API_BASE_URL?origins=$originLat,$originLng&destinations=$destLat,$destLng&key=$API_KEY'
       );
 
-      final response = await http.get(url).timeout(const Duration(seconds: 5));
+      final response = await NetworkService.get(url).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -628,7 +629,7 @@ class NearbyStationsController extends ChangeNotifier {
           'https://maps.googleapis.com/maps/api/place/details/json?place_id=$placeId&fields=name,formatted_address,opening_hours,website&key=$API_KEY'
       );
 
-      final response = await http.get(url).timeout(const Duration(seconds: 5));
+      final response = await NetworkService.get(url).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -682,7 +683,7 @@ class NearbyStationsController extends ChangeNotifier {
         return;
       }
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(ApiEndpoints.wishlist),
         headers: {
           'Authorization': '${tokenType ?? "Bearer"} $token',
@@ -859,4 +860,5 @@ class NearbyStationsController extends ChangeNotifier {
     notifyListeners();
   }
 }
+
 

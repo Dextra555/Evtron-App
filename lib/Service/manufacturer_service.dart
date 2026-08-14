@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/manufacturer_model.dart';
 import 'api_endpoints.dart';
@@ -19,7 +20,7 @@ class ManufacturerService {
         );
       }
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(ApiEndpoints.manufacturers),
         headers: {
           'Content-Type': 'application/json',
@@ -60,7 +61,7 @@ class ManufacturerService {
         );
       }
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(ApiEndpoints.models(manufacturerId)),
         headers: {
           'Content-Type': 'application/json',

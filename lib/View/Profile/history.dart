@@ -1,5 +1,5 @@
-import 'package:evtron/View/Profile/shimmer_charging_card.dart';
-import 'package:evtron/View/Profile/shimmer_payment_card.dart';
+import 'package:evtron/View/Profile/custom_shimmer_charging_card.dart';
+import 'package:evtron/View/Profile/custom_shimmer_payment_card.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
@@ -25,6 +25,9 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
   final ChargingHistoryController controller = ChargingHistoryController();
   final WalletTransactionController _transactionController = WalletTransactionController();
 
+  bool _isInitialLoading = true;
+  bool _isTransactionInitialLoading = true;
+
   @override
   void initState() {
     super.initState();
@@ -47,6 +50,10 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
             backgroundColor: Colors.red,
           ),
         );
+        setState(() {
+          _isInitialLoading = false;
+          _isTransactionInitialLoading = false;
+        });
       }
       return;
     }
@@ -63,6 +70,10 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
             backgroundColor: Colors.red,
           ),
         );
+        setState(() {
+          _isInitialLoading = false;
+          _isTransactionInitialLoading = false;
+        });
       }
       return;
     }
@@ -71,6 +82,11 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
 
     await loadChargingHistory();
     await loadTransactions();
+
+    setState(() {
+      _isInitialLoading = false;
+      _isTransactionInitialLoading = false;
+    });
   }
 
   Future<void> loadChargingHistory() async {
@@ -125,7 +141,12 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
     }
   }
 
-  void _openInvoicePreview(int chargerHistoryId) async {
+  void _openInvoicePreview(int chargerHistoryId, {String? stationType}) async {
+    final isPublic = (stationType ?? '').toLowerCase() == 'public';
+    if (!isPublic) {
+      return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -160,10 +181,8 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
         }
       }
     } catch (e) {
-      // Close loading dialog if still open
       if (mounted) Navigator.pop(context);
 
-      // Show error
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -230,12 +249,12 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
   }
 
   Widget _buildChargingHistoryContent() {
-    if (controller.isLoading) {
+    if (_isInitialLoading || controller.isLoading) {
       return ListView.builder(
         padding: const EdgeInsets.all(14),
         itemCount: 5,
         itemBuilder: (context, index) {
-          return const ShimmerChargingCard();
+          return const CustomShimmerChargingCard();
         },
       );
     }
@@ -288,12 +307,12 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
   }
 
   Widget _buildPaymentHistoryContent() {
-    if (_transactionController.isLoading) {
+    if (_isTransactionInitialLoading || _transactionController.isLoading) {
       return ListView.builder(
         padding: const EdgeInsets.all(14),
         itemCount: 5,
         itemBuilder: (context, index) {
-          return const ShimmerPaymentCard();
+          return const CustomShimmerPaymentCard();
         },
       );
     }
@@ -369,6 +388,8 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
   }
 
   Widget _buildChargingHistoryCard(ChargingHistoryModel data) {
+    final isPublic = (data.stationType ?? '').toLowerCase() == 'public';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -456,39 +477,41 @@ class _ChargingHistoryScreenState extends State<ChargingHistoryScreen> {
               ),
               Row(
                 children: [
-                  GestureDetector(
-                    onTap: () => _openInvoicePreview(data.id),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Appcolor.green.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Appcolor.green.withOpacity(0.3),
+                  if (isPublic)
+                    GestureDetector(
+                      onTap: () => _openInvoicePreview(data.id, stationType: data.stationType),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Appcolor.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Appcolor.green.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.download,
+                              size: 12,
+                              color: Appcolor.green,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              "Invoice",
+                              style: GoogleFonts.poppins(
+                                color: Appcolor.green,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.download,
-                            size: 12,
-                            color: Appcolor.green,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            "Invoice",
-                            style: GoogleFonts.poppins(
-                              color: Appcolor.green,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                    )
+                  else
+                    const SizedBox.shrink(),
                   const SizedBox(width: 8),
-                  // Status Badge
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(

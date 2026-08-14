@@ -3,8 +3,10 @@ import 'package:evtron/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:evtron/View/Login/splashscreen.dart';
+import 'package:evtron/app_globals.dart';
 import 'Controller/complaint_controller.dart';
 import 'Controller/payment_history_controller.dart';
+import 'Controller/scan_validation_controller.dart';
 import 'View/Home/homepage.dart';
 import 'View/Login/splash.dart';
 
@@ -33,6 +35,10 @@ void main() async {
           create: (_) => ComplaintController(),
         ),
 
+        ChangeNotifierProvider(
+          create: (_) => ScanValidationController(),
+        ),
+
       ],
 
       child: const MyApp(),
@@ -48,6 +54,8 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
 
     return MaterialApp(
+      navigatorKey: navigatorKey,
+      scaffoldMessengerKey: scaffoldMessengerKey,
 
       debugShowCheckedModeBanner: false,
 

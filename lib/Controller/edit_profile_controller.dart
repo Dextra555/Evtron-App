@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/edit_profile_model.dart';
 import '../Service/api_endpoints.dart';
@@ -25,7 +26,7 @@ class EditProfileController {
         headers['Authorization'] = token;
       }
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(apiUrl),
         headers: headers,
       );
@@ -106,7 +107,7 @@ class EditProfileController {
         headers['Authorization'] = token;
       }
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(apiUrl),
         headers: headers,
         body: jsonEncode(requestBody),

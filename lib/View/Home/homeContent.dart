@@ -539,7 +539,7 @@ class _HomeContentState extends State<HomeContent> {
                     iconSize: 20,
                     color: Colors.black87,
                     onPressed: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (context)=>NotificationScreen()));
+                      Navigator.push(context, MaterialPageRoute(builder: (context)=>NotificationsScreen()));
                     },
                   ),
                 ),

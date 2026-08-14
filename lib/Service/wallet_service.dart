@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import '../Model/wallet_model.dart';
 import '../Model/wallet_recharge_model.dart';
 import '../Model/wallet_receipt_model.dart';
@@ -12,7 +13,7 @@ class WalletService {
 
   Future<WalletModel?> getWalletDetails(String token) async {
     try {
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(ApiEndpoints.wallet),
         headers: {
           'Accept': 'application/json',
@@ -45,7 +46,7 @@ class WalletService {
   }) async
   {
     try {
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(ApiEndpoints.walletRecharge),
         headers: {
           'Accept': 'application/json',
@@ -91,7 +92,7 @@ class WalletService {
       print("========== WALLET RECEIPT ==========");
       print("URL: $url");
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(url),
         headers: {
           'Accept': 'application/json',
@@ -134,7 +135,7 @@ class WalletService {
       try {
         debugPrint('Trying to cancel order with payload: $payload');
 
-        final response = await http.post(
+        final response = await NetworkService.post(
           Uri.parse(ApiEndpoints.cancelRazorpayOrder),
           headers: {
             'Accept': 'application/json',
@@ -186,7 +187,7 @@ class WalletService {
     bool forceNew = false,
   }) async {
     try {
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(ApiEndpoints.createRazorpayOrder),
         headers: {
           'Accept': 'application/json',
@@ -215,9 +216,12 @@ class WalletService {
       }
 
       return null;
-    } catch (e) {
+    } on NetworkException {
+      rethrow;
+    } catch (e, stackTrace) {
       print("Create Razorpay Order Error: $e");
-      return null;
+      print(stackTrace);
+      rethrow;
     }
   }
 
@@ -227,7 +231,7 @@ class WalletService {
     required String orderId,
   }) async {
     try {
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse('${ApiEndpoints.createRazorpayOrder}/status/$orderId'),
         headers: {
           'Accept': 'application/json',
@@ -260,7 +264,7 @@ class WalletService {
     required String orderId,
   }) async {
     try {
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse('${ApiEndpoints.createRazorpayOrder}/$orderId'),
         headers: {
           'Accept': 'application/json',
@@ -292,7 +296,7 @@ class WalletService {
     required String orderId,
   }) async {
     try {
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse('${ApiEndpoints.createRazorpayOrder}/retry'),
         headers: {
           'Accept': 'application/json',
@@ -329,7 +333,7 @@ class WalletService {
     int limit = 10,
   }) async {
     try {
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse('${ApiEndpoints.wallet}/transactions?limit=$limit'),
         headers: {
           'Accept': 'application/json',
@@ -349,9 +353,12 @@ class WalletService {
       }
 
       return [];
-    } catch (e) {
+    } on NetworkException {
+      rethrow;
+    } catch (e, stackTrace) {
       print('Wallet Transactions Error: $e');
-      return [];
+      print(stackTrace);
+      rethrow;
     }
   }
 
@@ -362,7 +369,7 @@ class WalletService {
     required String signature,
   }) async {
     try {
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(ApiEndpoints.verifyRazorpayPayment),
         headers: {
           'Accept': 'application/json',

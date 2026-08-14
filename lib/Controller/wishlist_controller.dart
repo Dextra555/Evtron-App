@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/wishlist.dart';
 import '../Service/api_endpoints.dart';
@@ -10,12 +11,10 @@ class WishlistController extends ChangeNotifier {
   List<WishlistItem> wishlist = [];
   String errorMessage = '';
 
-  // Add method to check if a station is in wishlist
   bool isStationInWishlist(int stationId) {
     return wishlist.any((item) => item.station.id == stationId);
   }
 
-  // Add method to get wishlist ID for a station
   int? getWishlistIdForStation(int stationId) {
     try {
       final item = wishlist.firstWhere((item) => item.station.id == stationId);
@@ -42,7 +41,7 @@ class WishlistController extends ChangeNotifier {
         return;
       }
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(ApiEndpoints.wishlist),
         headers: {
           'Content-Type': 'application/json',
@@ -65,6 +64,9 @@ class WishlistController extends ChangeNotifier {
       } else {
         errorMessage = "Failed to load wishlist";
       }
+    } on NetworkException catch (_) {
+      print('⚠️ No internet connection detected while fetching wishlist');
+      errorMessage = NetworkService.noInternetMessage;
     } catch (e) {
       print('Error fetching wishlist: $e');
       errorMessage = "Something went wrong";
@@ -93,7 +95,7 @@ class WishlistController extends ChangeNotifier {
         return false;
       }
 
-      final response = await http.delete(
+      final response = await NetworkService.delete(
         Uri.parse(ApiEndpoints.removeWishlist(wishlistId)),
         headers: {
           'Content-Type': 'application/json',
@@ -144,7 +146,7 @@ class WishlistController extends ChangeNotifier {
         return false;
       }
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(ApiEndpoints.wishlist),
         headers: {
           'Content-Type': 'application/json',
@@ -183,4 +185,5 @@ class WishlistController extends ChangeNotifier {
     await fetchWishlist();
   }
 }
+
 

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import '../Model/register_model.dart';
 import '../Service/AuthService.dart';
 import '../Service/api_endpoints.dart';
@@ -12,7 +13,7 @@ class RegisterController {
       print('Request Body: ${jsonEncode(model.toJson())}');
       print('==========================================');
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(ApiEndpoints.register),
         headers: {
           'Content-Type': 'application/json',

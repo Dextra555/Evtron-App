@@ -96,30 +96,36 @@ class _NearbyStationsSectionState extends State<NearbyStationsSection> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.error_outline, color: Colors.red, size: 48),
-
               const SizedBox(height: 8),
-              Text(
-                controller.errorMessage,
-                style: GoogleFonts.poppins(fontSize: 13),
-                textAlign: TextAlign.center,
+              Expanded(
+                child: Text(
+                  controller.errorMessage,
+                  style: GoogleFonts.poppins(fontSize: 13),
+                  textAlign: TextAlign.center,
+                  maxLines: 2, // Limit to 2 lines
+                  overflow: TextOverflow.ellipsis, // Add ellipsis if too long
+                ),
               ),
               const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () {
-                  controller.clearError();
-                  _fetchStations();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Appcolor.green,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+              SizedBox(
+                width: 120, // Fixed width for the button
+                child: ElevatedButton(
+                  onPressed: () {
+                    controller.clearError();
+                    _fetchStations();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Appcolor.green,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                ),
-                child: Text(
-                  "Retry",
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+                  child: Text(
+                    "Retry",
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -282,7 +288,7 @@ class _NearbyStationsSectionState extends State<NearbyStationsSection> {
     return GestureDetector(
       onTap: () {
         final int stationId = station.stationId ?? index + 1;
-        StationDetailsBottomSheet.show(
+        StationDetailsBottomSheet.navigate(
           context: context,
           station: station,
         );

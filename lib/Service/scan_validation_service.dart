@@ -1,10 +1,10 @@
-// lib/Service/scan_validation_service.dart
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:evtron/Model/scan_validation_model.dart';
 import 'package:evtron/Service/api_endpoints.dart';
@@ -12,7 +12,6 @@ import 'package:geolocator/geolocator.dart';
 
 class ScanValidationService {
 
-  /// Get current location
   Future<Position?> _getCurrentLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -125,7 +124,7 @@ class ScanValidationService {
       print('🔑 Auth: Bearer ${authToken.substring(0, authToken.length > 20 ? 20 : authToken.length)}...');
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         url,
         headers: {
           'Content-Type': 'application/json',
@@ -186,6 +185,10 @@ class ScanValidationService {
         case 422:
           print('\n❌ UNPROCESSABLE ENTITY (422)');
           return ScanValidationResponse.fromJson(responseData, statusCode: 422);
+
+        case 403:
+          print('\n❌ FORBIDDEN (403)');
+          return ScanValidationResponse.fromJson(responseData, statusCode: 403);
 
         default:
           print('\n❌ UNKNOWN STATUS CODE: ${response.statusCode}');

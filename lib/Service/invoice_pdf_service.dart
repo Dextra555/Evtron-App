@@ -1,5 +1,6 @@
 import 'dart:io';
-import 'package:flutter/services.dart';
+import 'dart:typed_data';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
@@ -33,19 +34,58 @@ class PdfService {
     return null;
   }
 
+  static Future<pw.Font> _loadUnicodeFont() async {
+    final fontPaths = [
+      'assets/fonts/Arial.ttf',
+      'assets/fonts/NotoSans-Regular.ttf',
+      'assets/fonts/Roboto-Regular.ttf',
+      'assets/fonts/OpenSans-Regular.ttf',
+    ];
+
+    for (final path in fontPaths) {
+      try {
+        final fontData = await rootBundle.load(path);
+        return pw.Font.ttf(fontData);
+      } catch (_) {}
+    }
+
+    final systemFontPaths = [
+      'C:\\Windows\\Fonts\\arial.ttf',
+      'C:\\Windows\\Fonts\\segoeui.ttf',
+      'C:\\Windows\\Fonts\\segoeuib.ttf',
+      '/System/Library/Fonts/Arial.ttf',
+      '/Library/Fonts/Arial.ttf',
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    ];
+
+    for (final path in systemFontPaths) {
+      try {
+        final fontFile = File(path);
+        if (await fontFile.exists()) {
+          final fontBytes = await fontFile.readAsBytes();
+          return pw.Font.ttf(ByteData.sublistView(fontBytes));
+        }
+      } catch (_) {}
+    }
+
+    return pw.Font.helvetica();
+  }
+
+  static String _formatCurrencyWithRupee(double value)
+  {
+    return '${String.fromCharCode(0x20B9)} ${value.toStringAsFixed(2)}';
+  }
+
   static String _formatDateOnly(String? value) {
     if (value == null || value.trim().isEmpty) return '-';
 
     try {
-      // Check if the date is in DD-MM-YYYY format
       if (value.contains('-') && value.length >= 10) {
-        // Check if it's DD-MM-YYYY (first part is day, not year)
         final parts = value.trim().split(' ');
         final datePart = parts[0];
         final dateComponents = datePart.split('-');
 
         if (dateComponents.length == 3) {
-          // If first part is day (1-31), second is month (1-12), third is year (4 digits)
           final day = int.tryParse(dateComponents[0]);
           final month = int.tryParse(dateComponents[1]);
           final year = int.tryParse(dateComponents[2]);
@@ -264,6 +304,7 @@ class PdfService {
 
     final pdf = pw.Document();
     final logoImage = await _loadLogoImage();
+    final unicodeFont = await _loadUnicodeFont();
 
     pdf.addPage(
       pw.Page(
@@ -704,9 +745,12 @@ class PdfService {
                             alignment: pw.Alignment.center,
                           ),
                           _buildTableDataCellWithoutDivider(
-                            '${invoiceData.costBreakdown.energyCost.toStringAsFixed(2)}',
+                            _formatCurrencyWithRupee(
+                              invoiceData.costBreakdown.energyCost,
+                            ),
                             flex: 3,
                             alignment: pw.Alignment.center,
+                            font: unicodeFont,
                           ),
                         ],
                       ),
@@ -739,8 +783,11 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                '${invoiceData.costBreakdown.serviceFee.toStringAsFixed(2)}',
+                                _formatCurrencyWithRupee(
+                                  invoiceData.costBreakdown.serviceFee,
+                                ),
                                 style: pw.TextStyle(
+                                  font: unicodeFont,
                                   fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
@@ -779,8 +826,11 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                '${invoiceData.costBreakdown.idleCost.toStringAsFixed(2)}',
+                                _formatCurrencyWithRupee(
+                                  invoiceData.costBreakdown.idleCost,
+                                ),
                                 style: pw.TextStyle(
+                                  font: unicodeFont,
                                   fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
@@ -820,8 +870,11 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                '${invoiceData.gst.cgstAmount.toStringAsFixed(2)}',
+                                _formatCurrencyWithRupee(
+                                  invoiceData.gst.cgstAmount,
+                                ),
                                 style: pw.TextStyle(
+                                  font: unicodeFont,
                                   fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
@@ -832,7 +885,6 @@ class PdfService {
                       ),
                     ),
 
-// SGST ROW
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(
                         vertical: 4,
@@ -860,8 +912,11 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                '${invoiceData.gst.sgstAmount.toStringAsFixed(2)}',
+                                _formatCurrencyWithRupee(
+                                  invoiceData.gst.sgstAmount,
+                                ),
                                 style: pw.TextStyle(
+                                  font: unicodeFont,
                                   fontSize: 9,
                                   color: PdfColors.grey700,
                                 ),
@@ -903,8 +958,11 @@ class PdfService {
                             child: pw.Align(
                               alignment: pw.Alignment.center,
                               child: pw.Text(
-                                '${invoiceData.billing.total.toStringAsFixed(2)}', // Shows as integer (no decimal places)
+                                _formatCurrencyWithRupee(
+                                  invoiceData.billing.total,
+                                ),
                                 style: pw.TextStyle(
+                                  font: unicodeFont,
                                   fontSize: 9,
                                   fontWeight: pw.FontWeight.bold,
                                   color: PdfColors.grey800,
@@ -921,8 +979,6 @@ class PdfService {
 
               pw.SizedBox(height: 16),
 
-              // Payment Method
-              // Payment Method
               pw.Row(
                 children: [
                   pw.Text(
@@ -1071,6 +1127,7 @@ class PdfService {
         int flex = 1,
         bool isBold = false,
         pw.Alignment alignment = pw.Alignment.centerLeft,
+        pw.Font? font,
       }) {
     return pw.Expanded(
       flex: flex,
@@ -1081,6 +1138,7 @@ class PdfService {
           child: pw.Text(
             text,
             style: pw.TextStyle(
+              font: font,
               fontSize: 9,
               fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
             ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:evtron/Controller/scan_validation_controller.dart';
 import 'package:evtron/View/Scanner/vehiclelist.dart';
 import 'package:flutter/material.dart';
@@ -6,9 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../Controller/start_charging_controller.dart';
 import '../../Controller/vehicle_controller.dart';
-import '../../Model/scan_validation_model.dart';
 import '../../Model/vehicle_model.dart';
-import '../../Service/scan_validation_service.dart';
 import '../../Theme/colors.dart';
 import '../Login/Bottom.dart';
 import '../Payment/paymentpage.dart';
@@ -27,7 +26,8 @@ class ScannerPage extends StatefulWidget {
 
 class _ScannerPageState extends State<ScannerPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  // Camera Controllers
+  static Future<void> _previousControllerShutdown = Future.value();
+
   MobileScannerController? cameraController;
   bool isScanning = true;
   String? scannedData;
@@ -36,16 +36,14 @@ class _ScannerPageState extends State<ScannerPage>
   bool _hasPermission = false;
   bool _isStartingCamera = false;
   bool _isDisposing = false;
+  Future<void> _cameraLifecycleFuture = Future.value();
 
-  // Animation Controllers
   late AnimationController _scanAnimationController;
   late Animation<double> _scanAnimation;
 
-  // Text Controllers
   final TextEditingController _connectorIdController = TextEditingController();
   bool _isConnectorIdValid = false;
 
-  // Form Controllers
   final TextEditingController _stationNameController = TextEditingController();
   final TextEditingController _chargerModelController = TextEditingController();
   final TextEditingController _serialNumberController = TextEditingController();
@@ -53,33 +51,28 @@ class _ScannerPageState extends State<ScannerPage>
   String _selectedChargerType = 'CCS2';
   String _selectedStatus = 'Available';
 
-  // Dropdown Options
-  final List<String> chargerTypes = [
-    'CCS2',
-    'CHAdeMO',
-    'Type 2',
-    'GB/T',
-    'Tesla Supercharger',
-  ];
-  final List<String> statusOptions = [
-    'Available',
-    'Occupied',
-    'Maintenance',
-    'Offline',
-  ];
+  // final List<String> chargerTypes = [
+  //   'CCS2',
+  //   'CHAdeMO',
+  //   'Type 2',
+  //   'GB/T',
+  //   'Tesla Supercharger',
+  // ];
+  // final List<String> statusOptions = [
+  //   'Available',
+  //   'Occupied',
+  //   'Maintenance',
+  //   'Offline',
+  // ];
 
-  // Navigation
   int _currentIndex = 1;
 
-  // Vehicle Controllers
   final VehicleController _vehicleController = VehicleController();
   List<Vehicle> _vehicles = [];
   bool _isLoadingVehicles = false;
 
-  // Scan Validation Controller
   late ScanValidationController _scanValidationController;
 
-  // Store connector data for start charging
   int? _connectorId;
   int? _vehicleId;
 
@@ -88,13 +81,10 @@ class _ScannerPageState extends State<ScannerPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Initialize scan validation controller
     _scanValidationController = ScanValidationController();
 
-    // Load vehicles
     _loadVehicles();
 
-    // Initialize scan animation
     _scanAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -107,23 +97,20 @@ class _ScannerPageState extends State<ScannerPage>
       ),
     );
 
-    // Add listener to connector ID field
     _connectorIdController.addListener(_validateConnectorId);
 
-    // Set initial charger details if provided
     if (widget.chargerDetails != null) {
       _chargerModelController.text =
           widget.chargerDetails!['chargerModel'] ?? '';
       _selectedChargerType = widget.chargerDetails!['chargerType'] ?? 'CCS2';
     }
 
-    // Initialize camera after frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeCamera();
     });
   }
 
-  // ========== VEHICLE LOADING ==========
+
   Future<void> _loadVehicles() async {
     setState(() {
       _isLoadingVehicles = true;
@@ -156,7 +143,7 @@ class _ScannerPageState extends State<ScannerPage>
     }
   }
 
-  // ========== CAMERA METHODS ==========
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -171,60 +158,82 @@ class _ScannerPageState extends State<ScannerPage>
   }
 
   Future<void> _initializeCamera() async {
-    if (_isDisposing || _isStartingCamera) return;
+    if (_isDisposing) return;
 
-    final status = await Permission.camera.request();
+    await _runCameraLifecycle(() async {
+      final status = await Permission.camera.request();
 
-    if (status.isGranted) {
-      if (mounted) {
+      if (!mounted || _isDisposing) return;
+
+      if (status.isGranted) {
         setState(() {
           _hasPermission = true;
         });
-      }
 
-      await _disposeCameraController();
+        await _previousControllerShutdown;
 
-      if (!mounted) return;
-
-      cameraController = MobileScannerController(
-        detectionSpeed: DetectionSpeed.noDuplicates,
-        facing: CameraFacing.back,
-        torchEnabled: false,
-        autoStart: false,
-      );
-
-      if (mounted) {
-        setState(() {});
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted &&
-              cameraController != null &&
-              !_isStartingCamera &&
-              !_isDisposing) {
-            _startCamera();
+        if (cameraController != null) {
+          if (cameraController!.value.isRunning) {
+            setState(() {
+              _isInitialized = true;
+              _isStartingCamera = false;
+            });
+            return;
           }
-        });
-      }
-    } else {
-      if (mounted) {
+          await _stopCameraInternal();
+          await _disposeCameraControllerInternal();
+        }
+
+        if (!mounted || _isDisposing) return;
+
+        cameraController = MobileScannerController(
+          detectionSpeed: DetectionSpeed.noDuplicates,
+          facing: CameraFacing.back,
+          torchEnabled: false,
+          autoStart: false,
+        );
+
+        if (mounted) {
+          setState(() {});
+        }
+
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted && cameraController != null && !_isDisposing) {
+          await _startCameraInternal();
+        }
+      } else {
         setState(() {
           _hasPermission = false;
         });
         _showPermissionDeniedDialog();
       }
-    }
+    });
   }
 
   Future<void> _startCamera() async {
-    if (_isStartingCamera ||
-        _isDisposing ||
-        !mounted ||
-        cameraController == null) {
+    await _runCameraLifecycle(() => _startCameraInternal());
+  }
+
+  Future<void> _startCameraInternal() async {
+    if (_isDisposing || !mounted || cameraController == null) {
       return;
     }
 
-    setState(() {
-      _isStartingCamera = true;
-    });
+    if (cameraController!.value.isRunning || cameraController!.value.isStarting) {
+      if (mounted && !_isDisposing) {
+        setState(() {
+          _isInitialized = cameraController!.value.isInitialized;
+          _isStartingCamera = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted && !_isDisposing) {
+      setState(() {
+        _isStartingCamera = true;
+      });
+    }
 
     try {
       await cameraController!.start();
@@ -246,35 +255,73 @@ class _ScannerPageState extends State<ScannerPage>
   }
 
   Future<void> _stopCamera() async {
-    if (cameraController != null &&
-        mounted &&
-        _isInitialized &&
-        !_isDisposing) {
-      try {
-        await cameraController!.stop();
-        if (mounted) {
-          setState(() {
-            _isInitialized = false;
-          });
-        }
-      } catch (e) {
-        print('Error stopping camera: $e');
+    await _runCameraLifecycle(() async {
+      await _stopCameraInternal();
+    });
+  }
+
+  Future<void> _stopCameraInternal() async {
+    if (cameraController == null) {
+      if (mounted && !_isDisposing) {
+        setState(() {
+          _isInitialized = false;
+        });
+      }
+      return;
+    }
+
+    if (!cameraController!.value.isRunning && !cameraController!.value.isInitialized && !cameraController!.value.isStarting) {
+      if (mounted && !_isDisposing) {
+        setState(() {
+          _isInitialized = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      await cameraController!.stop();
+    } catch (e) {
+      print('Error stopping camera: $e');
+    } finally {
+      if (mounted && !_isDisposing) {
+        setState(() {
+          _isInitialized = false;
+          _isStartingCamera = false;
+        });
       }
     }
   }
 
   Future<void> _disposeCameraController() async {
-    if (cameraController != null) {
-      try {
-        await cameraController!.stop();
-        await cameraController!.dispose();
-      } catch (e) {
-        print('Error disposing camera: $e');
-      }
-      cameraController = null;
-      _isInitialized = false;
-      _isStartingCamera = false;
+    await _runCameraLifecycle(() async {
+      await _disposeCameraControllerInternal();
+    });
+  }
+
+  Future<void> _disposeCameraControllerInternal() async {
+    final controller = cameraController;
+    cameraController = null;
+    _isInitialized = false;
+    _isStartingCamera = false;
+
+    if (controller == null) {
+      return;
     }
+
+    try {
+      await controller.stop();
+      await controller.dispose();
+    } catch (e) {
+      print('Error disposing camera: $e');
+    }
+  }
+
+  Future<void> _runCameraLifecycle(Future<void> Function() operation) {
+    final current = _cameraLifecycleFuture;
+    final next = current.then((_) => operation(), onError: (_, __) => operation());
+    _cameraLifecycleFuture = next.catchError((_) {});
+    return next;
   }
 
   void _toggleFlash() {
@@ -319,7 +366,7 @@ class _ScannerPageState extends State<ScannerPage>
   }
 
   void _handleScan(BarcodeCapture capture) {
-    if (!isScanning || !mounted || !_isInitialized) return;
+    if (!isScanning || !mounted || !_isInitialized || cameraController == null || !cameraController!.value.isRunning) return;
 
     final String? code = capture.barcodes.first.rawValue;
     if (code != null) {
@@ -330,12 +377,40 @@ class _ScannerPageState extends State<ScannerPage>
         scannedData = upperCode;
       });
       _scanAnimationController.stop();
-      _stopCamera();
-
+    unawaited(_stopCamera());
       _connectorIdController.text = upperCode;
       _validateConnectorId();
 
       _navigateToVehicleScreen(upperCode);
+    }
+  }
+
+  void _pauseScannerForError() {
+    if (!mounted || _isDisposing) return;
+
+    setState(() {
+      isScanning = false;
+      scannedData = null;
+    });
+    _scanAnimationController.stop();
+    unawaited(_stopCamera());
+  }
+
+  Future<void> _resumeScanner() async {
+    if (!mounted || _isDisposing) return;
+
+    setState(() {
+      isScanning = true;
+      scannedData = null;
+    });
+    _scanAnimationController.repeat(reverse: true);
+
+    if (_hasPermission &&
+        cameraController != null &&
+        mounted &&
+        !_isStartingCamera &&
+        !_isDisposing) {
+      await _startCamera();
     }
   }
 
@@ -346,12 +421,12 @@ class _ScannerPageState extends State<ScannerPage>
     });
     _scanAnimationController.repeat(reverse: true);
 
-    if (!_isInitialized &&
+    if (_hasPermission &&
         cameraController != null &&
         mounted &&
         !_isStartingCamera &&
         !_isDisposing) {
-      _startCamera();
+      unawaited(_startCamera());
     }
   }
 
@@ -376,7 +451,6 @@ class _ScannerPageState extends State<ScannerPage>
         final lastPart = parts.last;
         return int.tryParse(lastPart) ?? 0;
       }
-      // Try to extract number from the end of the string
       final match = RegExp(r'(\d+)$').firstMatch(connectorUid);
       if (match != null) {
         return int.tryParse(match.group(1) ?? '0') ?? 0;
@@ -461,9 +535,9 @@ class _ScannerPageState extends State<ScannerPage>
         if (validationData.userBalance < 5) {
           _showErrorDialog(
             'Insufficient wallet balance (₹${validationData.userBalance.toStringAsFixed(2)}). '
-                'Minimum balance required: ₹5. Please recharge your wallet.',
+            'Minimum balance required: ₹5. Please recharge your wallet.',
           );
-          _resetScanner();
+          _pauseScannerForError();
           return;
         }
 
@@ -481,7 +555,7 @@ class _ScannerPageState extends State<ScannerPage>
               chargerModel: validationData.charger.model.isNotEmpty
                   ? validationData.charger.model
                   : widget.chargerDetails?['chargerModel'] ??
-                  'Standard Charger',
+                        'Standard Charger',
               chargerType: validationData.charger.connectorType.isNotEmpty
                   ? validationData.charger.connectorType
                   : _selectedChargerType,
@@ -514,7 +588,7 @@ class _ScannerPageState extends State<ScannerPage>
           failedCheck: config.failedCheck,
           errorCode: config.errorCode,
         );
-        _resetScanner();
+        _pauseScannerForError();
       }
     } catch (e) {
       print('\n❌ EXCEPTION during validation: $e');
@@ -523,7 +597,7 @@ class _ScannerPageState extends State<ScannerPage>
           Navigator.pop(context);
         }
         _showErrorDialog('An unexpected error occurred. Please try again.');
-        _resetScanner();
+        _pauseScannerForError();
       }
     }
   }
@@ -678,14 +752,14 @@ class _ScannerPageState extends State<ScannerPage>
 
   // ========== ERROR DIALOG ==========
   void _showErrorDialog(
-      String errorMessage, {
-        String? title,
-        IconData? icon,
-        Color? iconColor,
-        String? failedCheck,
-        String? errorCode,
-        List<ErrorAction>? actions,
-      }) {
+    String errorMessage, {
+    String? title,
+    IconData? icon,
+    Color? iconColor,
+    String? failedCheck,
+    String? errorCode,
+    List<ErrorAction>? actions,
+  }) {
     // Use values from controller if not provided
     if (title == null && _scanValidationController.response != null) {
       title = _scanValidationController.response!.getErrorTitle();
@@ -705,6 +779,8 @@ class _ScannerPageState extends State<ScannerPage>
     print('🔍 Failed Check: $failedCheck');
     print('🔑 Error Code: $errorCode');
     print('────────────────────────────────────────────────────────────');
+
+    _pauseScannerForError();
 
     showDialog(
       context: context,
@@ -771,9 +847,9 @@ class _ScannerPageState extends State<ScannerPage>
   }
 
   List<Widget> _buildActionButtons(
-      List<ErrorAction> actions,
-      BuildContext context,
-      ) {
+    List<ErrorAction> actions,
+    BuildContext context,
+  ) {
     final List<Widget> buttons = [];
 
     for (var i = 0; i < actions.length; i++) {
@@ -850,7 +926,7 @@ class _ScannerPageState extends State<ScannerPage>
       child: OutlinedButton(
         onPressed: () {
           Navigator.pop(context);
-          _resetScanner();
+          _resumeScanner();
         },
         style: OutlinedButton.styleFrom(
           side: BorderSide(color: Colors.grey.shade300),
@@ -880,18 +956,18 @@ class _ScannerPageState extends State<ScannerPage>
         _showConnectGunDialog();
         break;
       case 'try_another':
-        _resetScanner();
+        _resumeScanner();
         break;
       case 'retry':
         if (scannedData != null) {
           _navigateToVehicleScreen(scannedData!);
         } else {
-          _resetScanner();
+          _resumeScanner();
         }
         break;
       case 'go_back':
       default:
-        _resetScanner();
+        Navigator.maybePop(context);
         break;
     }
   }
@@ -998,16 +1074,14 @@ class _ScannerPageState extends State<ScannerPage>
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      _stopCamera();
+      unawaited(_stopCamera());
     } else if (state == AppLifecycleState.resumed) {
-      if (_hasPermission &&
-          mounted &&
-          !_isDisposing &&
-          cameraController != null &&
-          !_isStartingCamera) {
-        _startCamera();
-      } else if (_hasPermission && mounted && cameraController == null) {
-        _initializeCamera();
+      if (_hasPermission && mounted && !_isDisposing) {
+        if (cameraController != null && !cameraController!.value.isRunning && !cameraController!.value.isStarting) {
+          unawaited(_startCamera());
+        } else if (cameraController == null) {
+          unawaited(_initializeCamera());
+        }
       }
     }
   }
@@ -1017,7 +1091,8 @@ class _ScannerPageState extends State<ScannerPage>
     _isDisposing = true;
     WidgetsBinding.instance.removeObserver(this);
     _scanValidationController.dispose();
-    _disposeCameraController();
+    _previousControllerShutdown = _previousControllerShutdown.whenComplete(_disposeCameraController);
+    unawaited(_previousControllerShutdown);
     _scanAnimationController.dispose();
     _connectorIdController.dispose();
     _stationNameController.dispose();
@@ -1322,7 +1397,7 @@ class _ScannerPageState extends State<ScannerPage>
       builder: (context, child) {
         return Positioned(
           top:
-          (MediaQuery.of(context).size.height * 0.15) +
+              (MediaQuery.of(context).size.height * 0.15) +
               20 +
               _scanAnimation.value,
           left: (MediaQuery.of(context).size.width / 2) - 115,
@@ -1420,20 +1495,20 @@ class _ScannerPageState extends State<ScannerPage>
                 // ✅ FIXED: Replace check icon with arrow icon
                 suffixIcon: _isConnectorIdValid
                     ? GestureDetector(
-                  onTap: _startChargingWithManualId,
-                  child: Container(
-                    margin: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Appcolor.green,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.arrow_forward,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                  ),
-                )
+                        onTap: _startChargingWithManualId,
+                        child: Container(
+                          margin: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Appcolor.green,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.arrow_forward,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      )
                     : null,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -1450,7 +1525,6 @@ class _ScannerPageState extends State<ScannerPage>
           ),
           const SizedBox(height: 12),
 
-          // Start Charging Button
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -1494,6 +1568,5 @@ class ErrorAction {
     this.isPrimary = false,
   });
 }
-
 
 

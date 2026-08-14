@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/manufacturer_model.dart';
 import '../Model/vehicle_model.dart';
@@ -39,7 +40,7 @@ class VehicleController {
         headers['Authorization'] = token;
       }
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(apiUrl),
         headers: headers,
       );
@@ -121,7 +122,7 @@ class VehicleController {
         headers['Authorization'] = token;
       }
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(apiUrl),
         headers: headers,
         body: jsonEncode(model.toJson()),
@@ -203,7 +204,7 @@ class VehicleController {
         headers['Authorization'] = token;
       }
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(apiUrl),
         headers: headers,
         body: jsonEncode(model.toJson()),
@@ -284,7 +285,7 @@ class VehicleController {
         headers['Authorization'] = token;
       }
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(apiUrl),
         headers: headers,
         body: jsonEncode({}),

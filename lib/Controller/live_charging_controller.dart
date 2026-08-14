@@ -981,7 +981,14 @@ class LiveChargingController extends ChangeNotifier {
   // ==================== POLLING ====================
 
   void startPolling({int? sessionId, Duration? interval}) {
-    stopPolling();
+    if (_pollingTimer != null && _pollingTimer!.isActive) {
+      if (sessionId != null && _currentSessionId == sessionId) {
+        print('⏭️ Polling already active for session $sessionId; skipping duplicate start');
+        return;
+      }
+      stopPolling();
+    }
+
     _currentSessionId = sessionId;
     _pollingAttempts = 0;
     _consecutiveFailures = 0;

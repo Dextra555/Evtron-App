@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/start_charging_model.dart';
 import 'api_endpoints.dart';
@@ -152,7 +153,7 @@ class ChargingService {
 
       print('\n⏳ Sending HTTP request to server...');
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         url,
         headers: {
           'Content-Type': 'application/json',

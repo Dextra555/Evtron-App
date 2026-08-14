@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:evtron/Service/network_service.dart';
 import '../Model/wallet_model.dart';
 import '../Model/wallet_recharge_model.dart';
 import '../Model/wallet_receipt_model.dart';
@@ -71,8 +72,12 @@ class WalletController extends ChangeNotifier {
         forceNew: forceNew,
       );
       return razorpayOrderResponse;
-    } catch (e) {
+    } on NetworkException catch (e) {
+      print('Network error creating Razorpay order: $e');
+      rethrow;
+    } catch (e, stackTrace) {
       print('Error creating Razorpay order: $e');
+      print(stackTrace);
       return null;
     }
   }

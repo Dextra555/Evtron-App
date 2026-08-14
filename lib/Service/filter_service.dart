@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import '../Model/filter_master_model.dart';
 import 'AuthService.dart';
 import 'api_endpoints.dart';
@@ -31,7 +32,7 @@ class FilterService {
       final token = await AuthService.getUserToken();
       print('🔑 Token present: ${token != null && token.isNotEmpty}');
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(ApiEndpoints.filterMasterData),
         headers: {
           'Content-Type': 'application/json',
@@ -140,4 +141,5 @@ class FilterService {
     print('🧹 Filter cache cleared');
   }
 }
+
 

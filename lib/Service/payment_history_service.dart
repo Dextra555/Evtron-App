@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 
 import '../Model/payment_history_model.dart';
 import 'AuthService.dart';
@@ -27,7 +28,7 @@ class PaymentHistoryService {
         "API URL : ${ApiEndpoints.payments}",
       );
 
-      final response = await http.get(
+      final response = await NetworkService.get(
 
         Uri.parse(ApiEndpoints.payments),
 

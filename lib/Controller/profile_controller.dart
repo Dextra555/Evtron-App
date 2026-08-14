@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/profile_model.dart';
 import '../Service/api_endpoints.dart';
@@ -22,7 +23,7 @@ class ProfileController {
         headers['Authorization'] = token;
       }
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(apiUrl),
         headers: headers,
       );
@@ -47,11 +48,15 @@ class ProfileController {
 
       throw Exception("SERVER_ERROR");
 
+    } on NetworkException catch (_) {
+      print('⚠️ No internet connection detected while loading profile');
+      throw Exception("NO_INTERNET");
     } on SocketException {
       throw Exception("NO_INTERNET");
     } on HttpException {
       throw Exception("NO_INTERNET");
     } catch (e) {
+      print('Error fetching user profile: $e');
       rethrow;
     }
   }

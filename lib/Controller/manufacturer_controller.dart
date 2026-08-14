@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/manufacturer_model.dart';
 import '../Service/api_endpoints.dart';
@@ -24,7 +27,7 @@ class SettingsController {
         headers['Authorization'] = token;
       }
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(apiUrl),
         headers: headers,
       );
@@ -43,10 +46,29 @@ class SettingsController {
           data: [],
         );
       }
-    } catch (e) {
-      print('========== FETCH MANUFACTURERS ERROR ==========');
+    } on SocketException catch (e) {
+      print('NETWORK ERROR: No internet connection while fetching manufacturers');
       print('Error Message: $e');
-      print('===============================================');
+      rethrow;
+    } on TimeoutException catch (e) {
+      print('NETWORK ERROR: Request timed out while fetching manufacturers');
+      print('Error Message: $e');
+      rethrow;
+    } on http.ClientException catch (e) {
+      print('NETWORK ERROR: ClientException while fetching manufacturers');
+      print('Error Message: $e');
+      rethrow;
+    } on FormatException catch (e) {
+      print('PARSE ERROR: Invalid manufacturer response');
+      print('Error Message: $e');
+      return ManufacturerResponse(
+        success: false,
+        data: [],
+      );
+    } catch (e, stackTrace) {
+      print('UNKNOWN ERROR: Failed to fetch manufacturers');
+      print('Error Message: $e');
+      print(stackTrace);
       return ManufacturerResponse(
         success: false,
         data: [],
@@ -73,7 +95,7 @@ class SettingsController {
         headers['Authorization'] = token;
       }
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(apiUrl),
         headers: headers,
       );

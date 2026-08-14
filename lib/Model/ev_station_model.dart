@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class EVStation {
@@ -84,6 +85,31 @@ class EVStation {
     );
   }
 
+  // ✅ ADD THIS toJson METHOD
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'station_name': name,
+      'full_address': fullAddress,
+      'latitude': latitude.toString(),
+      'longitude': longitude.toString(),
+      'status': status,
+      'station_type': stationType,
+      'is_24_7': is247,
+      'estimated_charging_price': estimatedChargingPrice.toString(),
+      'total_chargers': totalChargers,
+      'available_chargers': availableChargers,
+      'connector_ports': connectorPorts.map((port) => port.toJson()).toList(),
+      'amenities': amenities,
+      'real_time_availability': realTimeAvailability,
+      'created_at': createdAt.toIso8601String(),
+      'rating': rating,
+      'active_chargers': activeChargers,
+      'inactive_chargers': inactiveChargers,
+      'charger_status_counts': chargerStatusCounts,
+    };
+  }
+
   // Helper method to get connector status counts
   Map<String, int> getConnectorStatusCounts() {
     Map<String, int> statusCounts = {};
@@ -91,6 +117,188 @@ class EVStation {
       statusCounts[port.status] = (statusCounts[port.status] ?? 0) + 1;
     }
     return statusCounts;
+  }
+
+  List<ConnectorPort> getFilteredConnectorPorts(Map<String, dynamic>? filters) {
+    if (filters == null || filters.isEmpty) {
+      return List<ConnectorPort>.from(connectorPorts);
+    }
+
+    final chargerType = _normalizeFilterValue(filters['chargerType']?.toString());
+    final connectorType = _normalizeFilterValue(filters['connectorType']?.toString());
+    final status = _normalizeFilterValue(filters['status']?.toString());
+    final powerRange = filters['powerRange'] as RangeValues?;
+
+    return connectorPorts.where((port) {
+      if (chargerType.isNotEmpty && chargerType != 'both' && !_matchesChargerType(port, chargerType)) {
+        return false;
+      }
+
+      if (connectorType.isNotEmpty && !_matchesConnectorType(port.type, connectorType)) {
+        return false;
+      }
+
+      if (status.isNotEmpty && !_matchesStatus(port.status, status)) {
+        return false;
+      }
+
+      if (powerRange != null && !(powerRange.start == 0.0 && powerRange.end == 350.0)) {
+        final power = port.kw ?? port.maxPower ?? 0.0;
+        if (!_matchesPowerRange(power, powerRange)) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
+  }
+
+  bool hasMatchingConnectorPorts(Map<String, dynamic>? filters) {
+    return getFilteredConnectorPorts(filters).isNotEmpty;
+  }
+
+  bool matchesPowerRange(RangeValues? powerRange) {
+    if (powerRange == null || (powerRange.start == 0.0 && powerRange.end == 350.0)) {
+      return true;
+    }
+
+    if (connectorPorts.isEmpty) {
+      return false;
+    }
+
+    final parsedPowers = connectorPorts.map((port) => _parsePower(port.kw) ?? _parsePower(port.maxPower)).whereType<double>().toList();
+    print('🔍 Station ${name}: selected range ${powerRange.start} - ${powerRange.end} kW, connector powers: $parsedPowers');
+
+    for (final power in parsedPowers) {
+      if (_matchesPowerRange(power, powerRange)) {
+        print('✅ Station ${name}: connector power $power matched selected range');
+        return true;
+      }
+    }
+
+    print('❌ Station ${name}: no connector power matched selected range');
+    return false;
+  }
+
+  bool _matchesPowerRange(double power, RangeValues? powerRange) {
+    if (powerRange == null || (powerRange.start == 0.0 && powerRange.end == 350.0)) {
+      return true;
+    }
+
+    const tolerance = 1e-9;
+    return power >= powerRange.start - tolerance && power <= powerRange.end + tolerance;
+  }
+
+  double? _parsePower(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is double) {
+      return value;
+    }
+
+    if (value is int) {
+      return value.toDouble();
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    if (value is String) {
+      return double.tryParse(value);
+    }
+
+    return double.tryParse(value.toString());
+  }
+
+  bool _matchesChargerType(ConnectorPort port, String selectedChargerType) {
+    final normalizedSelected = selectedChargerType.toLowerCase().trim();
+    final chargerType = (port.chargerType ?? '').trim().toLowerCase();
+    final connectorType = (port.type ?? '').trim().toLowerCase();
+    final power = port.kw ?? port.maxPower ?? 0.0;
+
+    if (chargerType.contains('dc')) {
+      return normalizedSelected == 'dc';
+    }
+
+    if (chargerType.contains('ac')) {
+      return normalizedSelected == 'ac';
+    }
+
+    if (connectorType.contains('ccs') ||
+        connectorType.contains('chademo') ||
+        connectorType.contains('gb/t') ||
+        connectorType.contains('tesla')) {
+      return normalizedSelected == 'dc' ? power > 50 : normalizedSelected == 'ac';
+    }
+
+    if (connectorType.contains('type 2') || connectorType.contains('type2')) {
+      return normalizedSelected == 'ac';
+    }
+
+    return normalizedSelected == 'dc' ? power > 50 : normalizedSelected == 'ac';
+  }
+
+  bool _matchesConnectorType(String type, String selectedConnectorType) {
+    final normalizedPortType = _normalizeConnectorType(type).toLowerCase().trim();
+    final normalizedSelectedType = _normalizeConnectorType(selectedConnectorType).toLowerCase().trim();
+    return normalizedPortType == normalizedSelectedType;
+  }
+
+  bool _matchesStatus(String status, String selectedStatus) {
+    final normalizedStatus = status.toLowerCase().trim();
+    final normalizedSelected = selectedStatus.toLowerCase().trim();
+
+    if (normalizedSelected == 'available') {
+      return normalizedStatus == 'available' || normalizedStatus == 'idle';
+    }
+
+    if (normalizedSelected == 'busy') {
+      return normalizedStatus == 'busy' ||
+          normalizedStatus == 'charging' ||
+          normalizedStatus == 'active' ||
+          normalizedStatus == 'in-use' ||
+          normalizedStatus == 'occupied';
+    }
+
+    if (normalizedSelected == 'fault') {
+      return normalizedStatus == 'fault' || normalizedStatus == 'error' || normalizedStatus == 'failed';
+    }
+
+    if (normalizedSelected == 'unavailable') {
+      return normalizedStatus == 'offline' ||
+          normalizedStatus == 'unavailable' ||
+          normalizedStatus == 'disconnected' ||
+          normalizedStatus == 'maintenance';
+    }
+
+    return normalizedStatus == normalizedSelected;
+  }
+
+  String _normalizeFilterValue(String? value) {
+    return value?.trim().toLowerCase() ?? '';
+  }
+
+  String _normalizeConnectorType(String value) {
+    final lower = value.toLowerCase();
+    if (lower == 'type2' || lower == 'type 2' || lower == 'type_2') {
+      return 'Type 2';
+    } else if (lower == 'type1' || lower == 'type 1' || lower == 'type_1') {
+      return 'Type 1';
+    } else if (lower == 'ccs2' || lower == 'ccs' || lower == 'ccs_2') {
+      return 'CCS';
+    } else if (lower == 'ccs1' || lower == 'ccs_1') {
+      return 'CCS1';
+    } else if (lower == 'chademo') {
+      return 'CHAdeMO';
+    } else if (lower == 'gbt' || lower == 'gb/t' || lower == 'gb_t') {
+      return 'GB/T';
+    } else if (lower == 'tesla' || lower == 'nacs') {
+      return 'Tesla';
+    }
+    return value;
   }
 
   // Helper method to determine overall availability status
@@ -104,13 +312,13 @@ class EVStation {
     }
 
     bool hasAvailable = connectorPorts.any(
-      (port) => port.status.toLowerCase() == 'available',
+          (port) => port.status.toLowerCase() == 'available',
     );
     bool hasFault = connectorPorts.any(
-      (port) => port.status.toLowerCase() == 'fault' || port.status.toLowerCase() == 'offline',
+          (port) => port.status.toLowerCase() == 'fault' || port.status.toLowerCase() == 'offline',
     );
     bool hasBusy = connectorPorts.any(
-      (port) => port.status.toLowerCase() == 'busy' || port.status.toLowerCase() == 'charging',
+          (port) => port.status.toLowerCase() == 'busy' || port.status.toLowerCase() == 'charging',
     );
 
     if (hasAvailable) return 'available';
@@ -128,6 +336,9 @@ class ConnectorPort {
   final String type;
   final String status;
   final double? maxPower;
+  final double? kw;
+  final String chargerType;
+  final String connectorUid;
 
   ConnectorPort({
     required this.chargerId,
@@ -135,6 +346,10 @@ class ConnectorPort {
     required this.type,
     required this.status,
     this.maxPower,
+    this.kw,
+    required this.chargerType,
+    required this.connectorUid,
+
   });
 
   factory ConnectorPort.fromJson(Map<String, dynamic> json) {
@@ -144,7 +359,24 @@ class ConnectorPort {
       type: json['type'] ?? 'Unknown',
       status: json['status'] ?? 'unknown',
       maxPower: json['max_power']?.toDouble(),
+      kw: json['kw']?.toDouble(),
+      chargerType: json['charger_type'] ?? 'Unknown',
+      connectorUid: json['connector_uid'] ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'charger_id': chargerId,
+      'connector_id': connectorId,
+      'connector_uid': connectorUid,
+      'type': type,
+      'status': status,
+      'max_power': maxPower,
+      'kw': kw,
+      'charger_type': chargerType,
+    };
+  }
 }
+
 

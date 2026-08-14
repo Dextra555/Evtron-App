@@ -331,7 +331,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            "Customer Details",
+            "Business Details",
             style: GoogleFonts.poppins(
               fontSize: 15,
               fontWeight: FontWeight.w600,

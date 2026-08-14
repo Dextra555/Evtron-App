@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'dart:convert';
 import '../../Model/ev_station_model.dart';
 import '../../Model/filter_master_model.dart';
@@ -12,7 +13,8 @@ class MapSearchBar extends StatefulWidget {
   final Function(EVStation) onStationSelected;
   final Function(LatLng, String) onLocationSelected;
   final Function(bool) onFilterStateChanged;
-  final Function(List<EVStation>)? onFilterApplied;
+  final Function(List<EVStation>, Map<String, dynamic>)? onFilterApplied;
+  final int resetSignal;
 
   const MapSearchBar({
     super.key,
@@ -22,6 +24,7 @@ class MapSearchBar extends StatefulWidget {
     required this.onLocationSelected,
     required this.onFilterStateChanged,
     this.onFilterApplied,
+    this.resetSignal = 0,
   });
 
   @override
@@ -53,11 +56,11 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
   late AnimationController _animationController;
   late Animation<double> _slideAnimation;
 
+  // ✅ Make these non-final so they can be updated
   List<String> _chargerTypes = [];
   List<String> _connectorTypes = [];
-
-  final List<String> _statuses = ['Available', 'In-Use','Fault'];
-  final List<String> _accessibilities = ['Public', 'Private', 'Guest'];
+  List<String> _statuses = ['Available', 'In-Use', 'Fault', 'Unavailable'];
+  List<String> _accessibilities = ['Public', 'Private', 'Guest'];
   final double _maxCapacity = 350.0;
 
   final FilterService _filterService = FilterService();
@@ -80,10 +83,47 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
   }
 
   @override
+  void didUpdateWidget(covariant MapSearchBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.resetSignal != widget.resetSignal && widget.resetSignal != 0) {
+      _resetFilterState(notifyParent: false);
+    }
+  }
+
+  @override
   void dispose() {
     _animationController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  // ✅ Get unique statuses from stations
+  List<String> _getUniqueStatusesFromStations() {
+    Set<String> statuses = {};
+    for (var station in widget.evStations) {
+      final status = _getStatus(station);
+      if (status != null && status.isNotEmpty) {
+        statuses.add(status);
+      }
+    }
+
+    // ✅ Always include all possible statuses
+    final allStatuses = {'Available', 'In-Use', 'Fault', 'Unavailable'};
+    statuses.addAll(allStatuses);
+
+    return statuses.toList()..sort();
+  }
+
+  // ✅ Get unique accessibility from stations
+  List<String> _getUniqueAccessibilityFromStations() {
+    Set<String> accessibilities = {};
+    for (var station in widget.evStations) {
+      final accessibility = _getAccessibility(station);
+      if (accessibility != null && accessibility.isNotEmpty) {
+        accessibilities.add(accessibility);
+      }
+    }
+    return accessibilities.toList()..sort();
   }
 
   Future<void> _loadFilterMasterData() async {
@@ -97,207 +137,422 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
       final data = await _filterService.getFilterMasterData();
 
       if (mounted) {
+        // Get charger types from API
         final chargerTypeNames = data.data.chargerTypes.map((e) => e.name).toList();
-        final connectorTypeNames = data.data.connectorTypes.map((e) => e.name).toList();
+
+        // Get connector types from API and normalize
+        final connectorTypeNames = data.data.connectorTypes
+            .map((e) => e.name.replaceAll('_', ' '))
+            .toList();
+
+        // ✅ Get actual statuses from stations (dynamic)
+        final statusesFromStations = _getUniqueStatusesFromStations();
+
+        // ✅ Get actual accessibility from stations (dynamic)
+        final accessibilityFromStations = _getUniqueAccessibilityFromStations();
 
         print('✅ API Response - Charger Types: ${chargerTypeNames.join(', ')}');
         print('✅ API Response - Connector Types: ${connectorTypeNames.join(', ')}');
+        print('✅ Derived from Stations - Statuses: ${statusesFromStations.join(', ')}');
+        print('✅ Derived from Stations - Accessibility: ${accessibilityFromStations.join(', ')}');
 
         setState(() {
           _filterMasterData = data;
           _chargerTypes = chargerTypeNames;
           _connectorTypes = connectorTypeNames;
+          _statuses = statusesFromStations.isNotEmpty
+              ? statusesFromStations
+              : ['Available', 'In-Use', 'Fault', 'Unavailable'];
+          _accessibilities = accessibilityFromStations.isNotEmpty
+              ? accessibilityFromStations
+              : ['Public', 'Private', 'Community'];
           _isLoadingFilters = false;
         });
 
         print('✅ Filter data loaded successfully:');
         print('   Charger types: $_chargerTypes');
         print('   Connector types: $_connectorTypes');
+        print('   Statuses: $_statuses');
+        print('   Accessibilities: $_accessibilities');
         print('========================================\n');
       }
     } catch (e) {
       print('❌ Error loading filter master data: $e');
       if (mounted) {
+        // ✅ Fallback: Derive from stations
+        final statusesFromStations = _getUniqueStatusesFromStations();
+        final accessibilityFromStations = _getUniqueAccessibilityFromStations();
+
         setState(() {
           _isLoadingFilters = false;
-          // Default values based on your actual model
           _chargerTypes = ['AC', 'DC', 'Both'];
           _connectorTypes = ['Type 1', 'Type 2', 'CCS', 'CHAdeMO', 'GB/T', 'Tesla'];
+          _statuses = statusesFromStations.isNotEmpty
+              ? statusesFromStations
+              : ['Available', 'In-Use', 'Fault', 'Unavailable'];
+          _accessibilities = accessibilityFromStations.isNotEmpty
+              ? accessibilityFromStations
+              : ['Public', 'Private', 'Community'];
           _filterError = 'Failed to load filter options. Using defaults.';
         });
         print('⚠️ Using fallback values:');
         print('   Charger types: $_chargerTypes');
         print('   Connector types: $_connectorTypes');
+        print('   Statuses: $_statuses');
+        print('   Accessibilities: $_accessibilities');
         print('========================================\n');
       }
     }
   }
 
-  // ✅ Updated: Get charger type from connector ports
   String? _getChargerType(EVStation station) {
     try {
-      // Check if all connectors are of same type
-      if (station.connectorPorts.isNotEmpty) {
-        Set<String> types = {};
-        for (var port in station.connectorPorts) {
-          final type = port.type.toLowerCase();
-          if (type.contains('dc') || type.contains('ccs') || type.contains('chademo')) {
+      if (station.connectorPorts.isEmpty) {
+        return 'AC';
+      }
+
+      Set<String> types = {};
+      for (var port in station.connectorPorts) {
+        final chargerType = (port.chargerType ?? '').trim().toLowerCase();
+        final connectorType = (port.type ?? '').trim().toLowerCase();
+        final power = port.kw ?? port.maxPower ?? 0.0;
+
+        if (chargerType.contains('dc')) {
+          types.add('DC');
+        } else if (chargerType.contains('ac')) {
+          types.add('AC');
+        } else if (connectorType.contains('ccs') ||
+            connectorType.contains('chademo') ||
+            connectorType.contains('gb/t') ||
+            connectorType.contains('tesla')) {
+          if (power > 50) {
             types.add('DC');
-          } else if (type.contains('ac') || type.contains('type')) {
+          } else {
             types.add('AC');
           }
-        }
-
-        if (types.contains('DC') && types.contains('AC')) {
-          return 'Both';
-        } else if (types.contains('DC')) {
-          return 'DC';
-        } else if (types.contains('AC')) {
-          return 'AC';
+        } else if (connectorType.contains('type 2') || connectorType.contains('type2')) {
+          types.add('AC');
         }
       }
-    } catch (e) {}
 
-    // Fallback based on station data
-    return station.totalChargers > 20 ? 'DC' : 'AC';
+      if (types.contains('DC') && types.contains('AC')) {
+        return 'Both';
+      } else if (types.contains('DC')) {
+        return 'DC';
+      } else if (types.contains('AC')) {
+        return 'AC';
+      }
+
+      bool hasHighPower = station.connectorPorts.any((port) =>
+      (port.kw ?? 0) > 50 || (port.maxPower ?? 0) > 50
+      );
+
+      return hasHighPower ? 'DC' : 'AC';
+    } catch (e) {
+      print('⚠️ Error getting charger type: $e');
+      return 'AC';
+    }
   }
 
-  // ✅ Updated: Get connector type from connector ports
   String? _getConnectorType(EVStation station) {
     try {
-      if (station.connectorPorts.isNotEmpty) {
-        // Get the most common connector type
-        Map<String, int> typeCount = {};
-        for (var port in station.connectorPorts) {
-          final type = port.type;
-          typeCount[type] = (typeCount[type] ?? 0) + 1;
-        }
-
-        // Return the most frequent type
-        String? mostCommonType;
-        int maxCount = 0;
-        typeCount.forEach((type, count) {
-          if (count > maxCount) {
-            maxCount = count;
-            mostCommonType = type;
-          }
-        });
-
-        if (mostCommonType != null) {
-          return mostCommonType;
-        }
+      if (station.connectorPorts.isEmpty) {
+        return null;
       }
-    } catch (e) {}
 
-    return null;
+      // Get the most common connector type
+      Map<String, int> typeCount = {};
+      for (var port in station.connectorPorts) {
+        // Normalize the type: replace underscores with spaces
+        String normalizedType = port.type
+            .replaceAll('_', ' ')
+            .trim();
+
+        // Handle common variations
+        normalizedType = _normalizeConnectorType(normalizedType);
+
+        typeCount[normalizedType] = (typeCount[normalizedType] ?? 0) + 1;
+      }
+
+      String? mostCommonType;
+      int maxCount = 0;
+      typeCount.forEach((type, count) {
+        if (count > maxCount) {
+          maxCount = count;
+          mostCommonType = type;
+        }
+      });
+
+      return mostCommonType;
+    } catch (e) {
+      print('⚠️ Error getting connector type: $e');
+      return null;
+    }
   }
 
-  // ✅ Updated: Get status from station
+  String _normalizeConnectorType(String type) {
+    final lower = type.toLowerCase();
+    if (lower == 'type2' || lower == 'type 2' || lower == 'type_2') {
+      return 'Type 2';
+    } else if (lower == 'type1' || lower == 'type 1' || lower == 'type_1') {
+      return 'Type 1';
+    } else if (lower == 'ccs2' || lower == 'ccs' || lower == 'ccs_2') {
+      return 'CCS';
+    } else if (lower == 'ccs1' || lower == 'ccs_1') {
+      return 'CCS1';
+    } else if (lower == 'chademo') {
+      return 'CHAdeMO';
+    } else if (lower == 'gbt' || lower == 'gb/t' || lower == 'gb_t') {
+      return 'GB/T';
+    } else if (lower == 'tesla' || lower == 'nacs') {
+      return 'Tesla';
+    }
+    return type;
+  }
+
   String? _getStatus(EVStation station) {
     try {
-      return station.status;
-    } catch (e) {}
+      if (station.connectorPorts.isEmpty) {
+        return 'Unavailable';
+      }
 
-    return 'active';
+      // Track all statuses found
+      Set<String> foundStatuses = {};
+
+      for (var port in station.connectorPorts) {
+        final status = port.status.toLowerCase().trim();
+        foundStatuses.add(status);
+
+        // Check for different statuses in priority order
+        if (status == 'busy' ||
+            status == 'charging' ||
+            status == 'active' ||
+            status == 'in-use' ||
+            status == 'occupied' ||
+            status == 'in_use') {
+          return 'In-Use';
+        }
+      }
+
+      // If no in-use, check for available
+      for (var port in station.connectorPorts) {
+        final status = port.status.toLowerCase().trim();
+        if (status == 'available' || status == 'idle') {
+          return 'Available';
+        }
+      }
+
+      // Check for fault/error
+      for (var port in station.connectorPorts) {
+        final status = port.status.toLowerCase().trim();
+        if (status == 'fault' || status == 'error' || status == 'failed') {
+          return 'Fault';
+        }
+      }
+
+      // Check for offline/unavailable
+      for (var port in station.connectorPorts) {
+        final status = port.status.toLowerCase().trim();
+        if (status == 'offline' ||
+            status == 'unavailable' ||
+            status == 'disconnected' ||
+            status == 'maintenance') {
+          return 'Unavailable';
+        }
+      }
+
+      // If all connectors have the same status, use that with proper capitalization
+      if (foundStatuses.length == 1) {
+        final singleStatus = foundStatuses.first;
+        // Map to standardized status names
+        if (singleStatus == 'offline' ||
+            singleStatus == 'unavailable' ||
+            singleStatus == 'disconnected') {
+          return 'Unavailable';
+        }
+
+        // Return with proper capitalization
+        return singleStatus.substring(0, 1).toUpperCase() + singleStatus.substring(1);
+      }
+
+      // Default: Check if any port is unavailable
+      bool hasAvailable = false;
+      bool hasUnavailable = false;
+
+      for (var port in station.connectorPorts) {
+        final status = port.status.toLowerCase().trim();
+        if (status == 'available' || status == 'idle') {
+          hasAvailable = true;
+        }
+        if (status == 'offline' || status == 'unavailable' || status == 'disconnected') {
+          hasUnavailable = true;
+        }
+      }
+
+      if (hasUnavailable && !hasAvailable) {
+        return 'Unavailable';
+      }
+
+      return 'Available';
+    } catch (e) {
+      print('⚠️ Error getting status: $e');
+      return 'Available';
+    }
   }
 
-  // ✅ Updated: Get accessibility from station type
   String? _getAccessibility(EVStation station) {
     try {
-      return station.stationType;
-    } catch (e) {}
+      // Get the station type
+      String type = station.stationType;
 
-    return 'public';
+      if (type.isEmpty) {
+        return 'Public'; // Default
+      }
+
+      // Handle various formats and return consistent value
+      String normalized = type.replaceAll('_', ' ').toLowerCase().trim();
+
+      // Map to consistent values
+      if (normalized.contains('public')) {
+        return 'Public';
+      } else if (normalized.contains('private')) {
+        return 'Private';
+      } else if (normalized.contains('guest') || normalized.contains('community')) {
+        return 'Guest';
+      } else {
+        // Return with first letter capitalized
+        return type.split(' ')
+            .map((word) => word.substring(0, 1).toUpperCase() + word.substring(1).toLowerCase())
+            .join(' ');
+      }
+    } catch (e) {
+      print('⚠️ Error getting accessibility: $e');
+      return 'Public';
+    }
   }
 
-  // ✅ Updated: Get charger capacity from connector ports
   double? _getChargerCapacity(EVStation station) {
     try {
       if (station.connectorPorts.isNotEmpty) {
-        // Get max power from connectors
-        double maxPower = 0;
+        double maxKW = 0;
         for (var port in station.connectorPorts) {
-          if (port.maxPower != null && port.maxPower! > maxPower) {
-            maxPower = port.maxPower!;
+          if (port.kw != null && port.kw! > maxKW) {
+            maxKW = port.kw!;
+          }
+          if (port.maxPower != null && port.maxPower! > maxKW) {
+            maxKW = port.maxPower!;
           }
         }
-        if (maxPower > 0) {
-          return maxPower;
+        if (maxKW > 0) {
+          return maxKW;
         }
       }
-    } catch (e) {}
-
-    // Fallback based on charger count
-    if (station.totalChargers > 50) return 150.0;
-    if (station.totalChargers > 20) return 100.0;
-    return 50.0;
-  }
-
-  // ✅ Updated: Get all unique connector types from stations
-  List<String> _getUniqueConnectorTypes() {
-    Set<String> types = {};
-    for (var station in widget.evStations) {
-      for (var port in station.connectorPorts) {
-        types.add(port.type);
-      }
+    } catch (e) {
+      print('⚠️ Error getting charger capacity: $e');
     }
-    return types.toList()..sort();
+    return station.totalChargers > 50 ? 150.0 : station.totalChargers > 20 ? 100.0 : 50.0;
   }
 
   List<EVStation> _getFilteredStations() {
     List<EVStation> filtered = [];
 
+    print('\n🔍 ========== FILTERING STATIONS ==========');
+    print('📊 Filter criteria:');
+    print('   Charger Type: ${_selectedChargerType ?? "All"}');
+    print('   Connector Type: ${_selectedConnectorType ?? "All"}');
+    print('   Status: ${_selectedStatus ?? "All"}');
+    print('   Accessibility: ${_selectedAccessibility ?? "All"}');
+    print('   Selected min/max power: ${_selectedCapacityRange.start} - ${_selectedCapacityRange.end} kW');
+    print('   Total stations before filtering: ${widget.evStations.length}');
+
     for (var station in widget.evStations) {
-      // Check charger type
-      if (_selectedChargerType != null) {
-        final chargerType = _getChargerType(station);
-        if (chargerType != _selectedChargerType) {
-          print('⏭️ Skipping ${station.name} - Charger type mismatch: $chargerType != ${_selectedChargerType}');
-          continue;
-        }
-      }
-
-      // Check connector type
-      if (_selectedConnectorType != null) {
-        final connectorType = _getConnectorType(station);
-        if (connectorType != _selectedConnectorType) {
-          print('⏭️ Skipping ${station.name} - Connector type mismatch: $connectorType != ${_selectedConnectorType}');
-          continue;
-        }
-      }
-
-      // Check status
-      if (_selectedStatus != null) {
-        final status = _getStatus(station);
-        if (status != _selectedStatus) {
-          print('⏭️ Skipping ${station.name} - Status mismatch: $status != ${_selectedStatus}');
-          continue;
-        }
-      }
-
-      // Check accessibility
-      if (_selectedAccessibility != null) {
-        final accessibility = _getAccessibility(station);
-        if (accessibility != _selectedAccessibility) {
-          print('⏭️ Skipping ${station.name} - Accessibility mismatch: $accessibility != ${_selectedAccessibility}');
-          continue;
-        }
-      }
-
-      // Check capacity range
+      final chargerType = _getChargerType(station);
+      final connectorType = _getConnectorType(station);
+      final status = _getStatus(station);
+      final accessibility = _getAccessibility(station);
       final chargerCapacity = _getChargerCapacity(station);
-      if (chargerCapacity != null) {
-        if (chargerCapacity < _selectedCapacityRange.start ||
-            chargerCapacity > _selectedCapacityRange.end) {
-          print('⏭️ Skipping ${station.name} - Capacity mismatch: $chargerCapacity kW not in range ${_selectedCapacityRange.start}-${_selectedCapacityRange.end}');
-          continue;
+
+      print('\n📌 Checking: ${station.name}');
+      print('   Charger Type: $chargerType');
+      print('   Connector Type: $connectorType');
+      print('   Status: $status');
+      print('   Accessibility: $accessibility');
+      print('   Station power summary: ${chargerCapacity?.toStringAsFixed(1)} kW');
+      for (final port in station.connectorPorts) {
+        final powerValue = port.kw ?? port.maxPower;
+        final parsedPower = powerValue is num
+            ? (powerValue as num).toDouble()
+            : double.tryParse(powerValue?.toString() ?? '');
+        print('   Connector ${port.connectorId}: raw=${powerValue ?? 'null'} parsed=${parsedPower?.toStringAsFixed(2) ?? 'null'}');
+      }
+
+      bool passedAllFilters = true;
+
+      final connectorFilters = {
+        'chargerType': _selectedChargerType,
+        'connectorType': _selectedConnectorType,
+        'status': _selectedStatus,
+        'powerRange': _selectedCapacityRange,
+      };
+
+      final matchingConnectors = station.getFilteredConnectorPorts(connectorFilters);
+      final hasConnectorCriteria = (_selectedChargerType != null && _selectedChargerType!.isNotEmpty) ||
+          (_selectedConnectorType != null && _selectedConnectorType!.isNotEmpty) ||
+          (_selectedStatus != null && _selectedStatus!.isNotEmpty) ||
+          (_selectedCapacityRange.start > 0.0 || _selectedCapacityRange.end < _maxCapacity);
+
+      if (hasConnectorCriteria && matchingConnectors.isEmpty) {
+        print('   ❌ Skipped - No connectors match the selected connector filters');
+        passedAllFilters = false;
+      }
+
+      if (passedAllFilters && _selectedStatus != null && _selectedStatus!.isNotEmpty) {
+        String normalizedSelected = _selectedStatus!.toLowerCase().trim();
+        String normalizedStation = (status ?? '').toLowerCase().trim();
+
+        if (normalizedStation != normalizedSelected) {
+          print('   ❌ Skipped - Status mismatch: $status != ${_selectedStatus}');
+          passedAllFilters = false;
         }
       }
 
-      filtered.add(station);
+      if (passedAllFilters && _selectedAccessibility != null && _selectedAccessibility!.isNotEmpty) {
+        String normalizedSelected = _selectedAccessibility!.toLowerCase().trim();
+        String normalizedStation = (accessibility ?? '').toLowerCase().trim();
+
+        if (normalizedStation != normalizedSelected) {
+          print('   ❌ Skipped - Accessibility mismatch: $accessibility != ${_selectedAccessibility}');
+          passedAllFilters = false;
+        }
+      }
+
+      if (passedAllFilters) {
+        bool isDefaultRange =
+            _selectedCapacityRange.start == 0.0 &&
+                _selectedCapacityRange.end == _maxCapacity;
+
+        if (!isDefaultRange) {
+          final stationPower = station.connectorPorts.isEmpty
+              ? 0.0
+              : station.connectorPorts
+                  .map((port) => port.kw ?? port.maxPower ?? 0.0)
+                  .fold<double>(0.0, (maxValue, current) => current > maxValue ? current : maxValue);
+
+          if (!station.matchesPowerRange(_selectedCapacityRange)) {
+            print('   ❌ Skipped - Power out of range');
+            passedAllFilters = false;
+          }
+        }
+      }
+
+      if (passedAllFilters) {
+        print('   ✅ PASSED ALL FILTERS');
+        filtered.add(station);
+      }
     }
 
-    print('✅ Filtered ${filtered.length} stations from ${widget.evStations.length} total');
+    print('\n✅ Filtered ${filtered.length} stations from ${widget.evStations.length} total');
+    print('========================================\n');
     return filtered;
   }
 
@@ -313,53 +568,99 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
     widget.onFilterStateChanged(_isFilterExpanded);
   }
 
+  Map<String, dynamic> _getCurrentFilterState() {
+    return {
+      'chargerType': _selectedChargerType,
+      'connectorType': _selectedConnectorType,
+      'status': _selectedStatus,
+      'accessibility': _selectedAccessibility,
+      'powerRange': RangeValues(
+        _selectedCapacityRange.start,
+        _selectedCapacityRange.end,
+      ),
+    };
+  }
+
   void _applyFilters() {
     setState(() {
-      _isFilterApplied = _selectedChargerType != null ||
-          _selectedConnectorType != null ||
-          _selectedStatus != null ||
-          _selectedAccessibility != null ||
-          _selectedCapacityRange.start > 0.0 ||
-          _selectedCapacityRange.end < _maxCapacity;
-
-      // Get filtered stations
-      final filteredStations = _getFilteredStations();
-
-      print('📊 Applied filters - Found ${filteredStations.length} stations out of ${widget.evStations.length}');
+      print('\n🔍 ========== APPLYING FILTERS ==========');
       print('   Charger Type: ${_selectedChargerType ?? "All"}');
       print('   Connector Type: ${_selectedConnectorType ?? "All"}');
       print('   Status: ${_selectedStatus ?? "All"}');
       print('   Accessibility: ${_selectedAccessibility ?? "All"}');
-      print('   Capacity Range: ${_selectedCapacityRange.start} - ${_selectedCapacityRange.end} kW');
+      print('   Power Range: ${_selectedCapacityRange.start} - ${_selectedCapacityRange.end} kW');
 
-      // Notify parent widget to update map markers
+      _isFilterApplied =
+          (_selectedChargerType != null && _selectedChargerType!.isNotEmpty) ||
+              (_selectedConnectorType != null && _selectedConnectorType!.isNotEmpty) ||
+              (_selectedStatus != null && _selectedStatus!.isNotEmpty) ||
+              (_selectedAccessibility != null && _selectedAccessibility!.isNotEmpty) ||
+              _selectedCapacityRange.start > 0.0 ||
+              _selectedCapacityRange.end < _maxCapacity;
+
+      final filteredStations = _getFilteredStations();
+
+      print('📊 Applied filters - Found ${filteredStations.length} stations out of ${widget.evStations.length}');
+
+      // Log sample station values for debugging
+      if (filteredStations.isNotEmpty) {
+        print('📌 Sample filtered station: ${filteredStations.first.name}');
+        print('   Accessibility: ${_getAccessibility(filteredStations.first)}');
+        print('   Status: ${_getStatus(filteredStations.first)}');
+        print('   Charger Type: ${_getChargerType(filteredStations.first)}');
+      } else {
+        print('⚠️ No stations match the filters!');
+
+        // ✅ SHOW SNACKBAR WHEN NO RESULTS FOUND
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No stations match the selected filters'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+
+        // Log first few stations' values for debugging
+        for (var i = 0; i < widget.evStations.length && i < 3; i++) {
+          final station = widget.evStations[i];
+          print('   Station ${i+1}: ${station.name}');
+          print('      Accessibility: ${_getAccessibility(station)}');
+          print('      Status: ${_getStatus(station)}');
+          print('      Charger Type: ${_getChargerType(station)}');
+        }
+      }
+      print('==========================================\n');
+
       if (widget.onFilterApplied != null) {
-        widget.onFilterApplied!(filteredStations);
+        widget.onFilterApplied!(filteredStations, _getCurrentFilterState());
       }
 
-      // Update search results
       _searchLocation(_controller.text);
       _toggleFilter();
     });
   }
 
-  void _clearFilters() {
+  void _resetFilterState({bool notifyParent = true}) {
     setState(() {
       _selectedChargerType = null;
       _selectedConnectorType = null;
       _selectedStatus = null;
       _selectedAccessibility = null;
-      _selectedCapacityRange = RangeValues(0.0, _maxCapacity);
+      _selectedCapacityRange = const RangeValues(0.0, 350.0);
       _isFilterApplied = false;
-
-      // Reset to show all stations
-      if (widget.onFilterApplied != null) {
-        widget.onFilterApplied!(widget.evStations);
-        print('📊 Cleared filters - Showing all ${widget.evStations.length} stations');
-      }
-
-      _searchLocation(_controller.text);
     });
+
+    if (notifyParent && widget.onFilterApplied != null) {
+      widget.onFilterApplied!(widget.evStations, _getCurrentFilterState());
+      print('📊 Cleared filters - Showing all ${widget.evStations.length} stations');
+    }
+
+    _searchLocation(_controller.text);
+  }
+
+  void _clearFilters() {
+    _resetFilterState(notifyParent: true);
   }
 
   Future<void> _searchLocation(String query) async {
@@ -399,9 +700,7 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
         if (_selectedStatus != null && status != _selectedStatus) continue;
         if (_selectedAccessibility != null && accessibility != _selectedAccessibility) continue;
 
-        double stationCapacity = chargerCapacity ?? 0;
-        if (stationCapacity < _selectedCapacityRange.start ||
-            stationCapacity > _selectedCapacityRange.end) continue;
+        if (!station.matchesPowerRange(_selectedCapacityRange)) continue;
 
         results.add({
           'type': 'EV Station',
@@ -416,7 +715,7 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
           "&location=${widget.currentPosition.latitude},${widget.currentPosition.longitude}"
           "&radius=50000&types=establishment|geocode&key=$_apiKey";
 
-      final response = await http.get(Uri.parse(url));
+      final response = await NetworkService.get(Uri.parse(url));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['status'] == 'OK' && data['predictions'] != null) {
@@ -454,7 +753,7 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
       final detailsUrl = "https://maps.googleapis.com/maps/api/place/details/json"
           "?place_id=${result['placeId']}&fields=geometry,formatted_address&key=$_apiKey";
 
-      final response = await http.get(Uri.parse(detailsUrl));
+      final response = await NetworkService.get(Uri.parse(detailsUrl));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['status'] == 'OK' && data['result'] != null) {
@@ -480,6 +779,9 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
     required Function(String?) onChanged,
     bool isLoading = false,
   }) {
+    // Sort and remove duplicates from items
+    final uniqueItems = items.toSet().toList()..sort();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -517,9 +819,9 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
               isExpanded: true,
               dropdownColor: Colors.grey[900],
               hint: Text(
-                items.isEmpty ? 'Loading...' : 'Select $label',
+                uniqueItems.isEmpty ? 'No options' : 'Select $label',
                 style: TextStyle(
-                  color: items.isEmpty
+                  color: uniqueItems.isEmpty
                       ? Colors.white.withOpacity(0.4)
                       : Colors.white.withOpacity(0.7),
                 ),
@@ -529,17 +831,17 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
                   value: null,
                   child: Text('All', style: TextStyle(color: Colors.white)),
                 ),
-                ...items.map((item) {
+                ...uniqueItems.map((item) {
                   return DropdownMenuItem<String>(
                     value: item,
                     child: Text(item, style: const TextStyle(color: Colors.white)),
                   );
                 }),
               ],
-              onChanged: items.isEmpty ? null : onChanged,
+              onChanged: uniqueItems.isEmpty ? null : onChanged,
               icon: Icon(
                 Icons.arrow_drop_down,
-                color: items.isEmpty
+                color: uniqueItems.isEmpty
                     ? Colors.white.withOpacity(0.3)
                     : Colors.white.withOpacity(0.7),
               ),
@@ -740,7 +1042,7 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Charger Capacity: ${_selectedCapacityRange.start.toStringAsFixed(1)} - ${_selectedCapacityRange.end.toStringAsFixed(1)} kW',
+                          'Charger Power: ${_selectedCapacityRange.start.toStringAsFixed(1)} - ${_selectedCapacityRange.end.toStringAsFixed(1)} kW',
                           style: const TextStyle(
                             fontWeight: FontWeight.w500,
                             fontSize: 13,
@@ -748,15 +1050,12 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
                           ),
                         ),
                         const SizedBox(height: 8),
+
                         RangeSlider(
                           values: _selectedCapacityRange,
                           min: 0.0,
                           max: _maxCapacity,
-                          divisions: 350,
-                          labels: RangeLabels(
-                            '${_selectedCapacityRange.start.toStringAsFixed(1)} kW',
-                            '${_selectedCapacityRange.end.toStringAsFixed(1)} kW',
-                          ),
+                          divisions: (_maxCapacity * 10).round(),
                           onChanged: (RangeValues values) {
                             setState(() {
                               _selectedCapacityRange = values;
@@ -786,6 +1085,7 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 16),
 
                     if (_filterError != null)
@@ -915,4 +1215,5 @@ class _MapSearchBarState extends State<MapSearchBar> with SingleTickerProviderSt
     );
   }
 }
+
 

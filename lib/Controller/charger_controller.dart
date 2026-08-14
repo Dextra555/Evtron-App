@@ -1,6 +1,7 @@
 // import 'dart:convert';
 // import 'package:flutter/material.dart';
 // import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 // import 'package:shared_preferences/shared_preferences.dart';
 // import '../Model/charger_model.dart';
 //
@@ -54,7 +55,7 @@
 //       print('📋 Headers:');
 //       print('   Authorization: Bearer ${token.substring(0, token.length > 20 ? 20 : token.length)}...');
 //
-//       final response = await http.get(
+//       final response = await NetworkService.get(
 //         url,
 //         headers: {
 //           'Authorization': 'Bearer $token',
@@ -150,3 +151,4 @@
 //   }
 // }
 //
+

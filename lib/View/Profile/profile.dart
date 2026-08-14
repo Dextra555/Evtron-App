@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 import '../../Controller/profile_controller.dart';
 import '../../Model/profile_model.dart';
+import '../../Service/network_service.dart';
 import '../Home/mapui.dart';
 import '../Login/Bottom.dart';
 import '../Login/login.dart';
@@ -11,10 +12,12 @@ import 'complaint.dart';
 import 'editprofile.dart';
 import 'favourites.dart';
 import 'history.dart';
+import 'notification.dart';
 import 'support.dart';
 import '../Scanner/scanner.dart';
 import 'myevs.dart';
 import '../Payment/paymentpage.dart';
+import 'custom_shimmer_profile_card.dart';
 
 class Profilepage extends StatefulWidget {
   const Profilepage({super.key});
@@ -96,7 +99,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // ---------- Navigation ----------
   void _onTabTapped(int index) {
     if (index == _currentIndex) return;
 
@@ -148,8 +150,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       final error = e.toString();
 
-      if (error.contains("NO_INTERNET")) {
-        _showErrorMessage("Please check your internet connection.");
+      if (e is NetworkException || error.contains("NO_INTERNET")) {
+        _showErrorMessage(NetworkService.noInternetMessage);
         return; // Stay on Profile page
       }
 
@@ -261,22 +263,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildLoadingView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const CircularProgressIndicator(
-            color: Colors.green,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Loading profile...',
-            style: TextStyle(
-              color: widget.isDarkMode ? Colors.white : Colors.black,
-            ),
-          ),
-        ],
-      ),
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      children: [
+        const SizedBox(height: 60),
+        CustomShimmerProfileCard(isDarkMode: widget.isDarkMode),
+        const SizedBox(height: 28),
+        _buildMenuItem(
+          icon: Icons.electric_car,
+          title: "My Ev's",
+          onTap: () {},
+        ),
+        _buildMenuItem(
+          icon: Icons.history,
+          title: 'History',
+          onTap: () {},
+        ),
+        _buildMenuItem(
+          icon: Icons.report_problem_outlined,
+          title: 'Complaint Raising',
+          onTap: () {},
+        ),
+        _buildMenuItem(
+          icon: Icons.support_agent,
+          title: 'Support',
+          onTap: () {},
+        ),
+        _buildMenuItem(
+          icon: Icons.help_outline,
+          title: 'FAQ',
+          onTap: () {},
+        ),
+        const SizedBox(height: 16),
+        _buildLogoutButton(),
+        const SizedBox(height: 8),
+        _buildVersionText(),
+        const SizedBox(height: 25),
+      ],
     );
   }
 
@@ -290,9 +313,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _buildMenuItems(),
         const SizedBox(height: 16),
         _buildLogoutButton(),
-        // const SizedBox(height: 12),
-        // _buildTokenDisplay(), // Display token below logout button
-        // const SizedBox(height: 25),
+        const SizedBox(height: 8),
+        _buildVersionText(),
+        const SizedBox(height: 25),
       ],
     );
   }
@@ -383,7 +406,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildMenuItems() {
     return Column(
       children: [
-
         _buildMenuItem(
           icon: Icons.electric_car,
           title: "My Ev's",
@@ -424,6 +446,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
             );
           },
         ),
+        // _buildMenuItem(
+        //   icon: Icons.notifications_active_outlined,
+        //   title: 'Notification',
+        //   onTap: () {
+        //     Navigator.push(
+        //       context,
+        //       MaterialPageRoute(builder: (context) => const NotificationsScreen()),
+        //     );
+        //   },
+        // ),
         _buildMenuItem(
           icon: Icons.help_outline,
           title: 'FAQ',
@@ -461,145 +493,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildTokenDisplay() {
-    if (_authToken == null || _authToken!.isEmpty) {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 14),
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.key_off, size: 14, color: Colors.grey[600]),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'No token found. Please login again.',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[600],
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Truncate token for display if it's too long
-    String displayToken = _authToken!;
-    if (displayToken.length > 80) {
-      displayToken = '${displayToken.substring(0, 40)}...${displayToken.substring(displayToken.length - 30)}';
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.key, size: 16, color: Colors.blue[700]),
-              const SizedBox(width: 8),
-              Text(
-                'Access Token',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.blue[700],
-                ),
-              ),
-              const Spacer(),
-              GestureDetector(
-                onTap: () {
-                  _copyTokenToClipboard();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.copy, size: 14, color: Colors.blue[700]),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Copy',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.blue[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SelectableText(
-                  displayToken,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontFamily: 'monospace',
-                    color: Colors.black87,
-                  ),
-                ),
-                if (_authToken!.length > 80) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Token is too long. Tap copy to get full token.',
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: Colors.grey[500],
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _copyTokenToClipboard() {
-    if (_authToken != null && _authToken!.isNotEmpty) {
-      Clipboard.setData(ClipboardData(text: _authToken!));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Token copied to clipboard'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      print('Token copied to clipboard');
-    }
-  }
-
   Widget _buildLogoutButton() {
     return GestureDetector(
       onTap: _showLogoutDialog,
@@ -629,6 +522,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _buildVersionText() {
+    return Center(
+      child: Text(
+        'Version 1.20',
+        style: TextStyle(
+          fontSize: 12,
+          color: widget.isDarkMode ? Colors.grey[600] : Colors.grey[400],
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+    );
+  }
+
   Future<void> _launchFAQ() async {
     final Uri uri = Uri.parse('https://evtron.in');
     try {
@@ -643,5 +549,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 }
+
 
 

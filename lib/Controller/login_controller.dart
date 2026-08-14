@@ -1,6 +1,7 @@
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import '../Model/login_model.dart';
 import '../Service/api_endpoints.dart';
 
@@ -12,7 +13,7 @@ class LoginController {
       print('Request Body: ${jsonEncode(model.toJson())}');
       print('==========================================');
 
-      final response = await http.post(
+      final response = await NetworkService.post(
         Uri.parse(ApiEndpoints.sendOtp),
         headers: {
           'Content-Type': 'application/json',
@@ -73,4 +74,5 @@ class LoginController {
     }
   }
 }
+
 

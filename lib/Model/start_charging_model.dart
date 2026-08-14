@@ -1,4 +1,3 @@
-// lib/Model/start_charging_model.dart
 
 import 'package:flutter/material.dart';
 
@@ -43,13 +42,11 @@ class ChargingSessionResponse {
   factory ChargingSessionResponse.fromJson(Map<String, dynamic> json, {int? statusCode}) {
     print('🔍 Parsing ChargingSessionResponse from JSON: $json');
 
-    // Extract error details
     String? errorCode;
     String? failedCheck;
     String? errorDescription;
     Map<String, dynamic>? errors;
 
-    // Check for errors object (422 validation)
     if (json['errors'] != null && json['errors'] is Map<String, dynamic>) {
       errors = Map<String, dynamic>.from(json['errors']);
     }
@@ -87,7 +84,6 @@ class ChargingSessionResponse {
     );
   }
 
-  /// Get user-friendly error message based on error type
   String getUserFriendlyMessage() {
     // Check for validation errors (422)
     if (errors != null && errors!.isNotEmpty) {
@@ -119,7 +115,7 @@ class ChargingSessionResponse {
         case 'already_starting':
           return 'Another start request is already in progress. Please wait.';
         case 'not_preparing':
-          return _getNotPreparingMessage(message);
+          return 'Connector is not in preparing state. Please connect the charging gun first.';
         case 'ocpp_comm_fail':
           return 'Failed to communicate with charger. Please try again.';
         case 'charger_rejected':
@@ -169,14 +165,7 @@ class ChargingSessionResponse {
   }
 
   String _getNotPreparingMessage(String defaultMessage) {
-    // Extract current state from message
-    final regExp = RegExp(r'current: (\w+)');
-    final match = regExp.firstMatch(defaultMessage);
-    if (match != null) {
-      final currentState = match.group(1);
-      return 'Connector is not in Preparing state (current: $currentState). Please connect the charging gun first.';
-    }
-    return 'Please connect the charging gun to your vehicle first.';
+    return 'Connector is not in preparing state. Please connect the charging gun first.';
   }
 
   /// Get appropriate icon for error dialog
@@ -272,13 +261,12 @@ class ChargingSessionResponse {
         case 'charger_rejected':
           return 'Request Rejected';
         default:
-          return 'Charging Failed';
+          return '';
       }
     }
-    return 'Charging Failed';
+    return '';
   }
 
-  /// Get action buttons for error dialog
   List<ErrorAction> getErrorActions() {
     final actions = <ErrorAction>[];
 
@@ -293,8 +281,8 @@ class ChargingSessionResponse {
           break;
         case 'not_preparing':
           actions.add(ErrorAction(
-            label: 'Connect Gun',
-            action: 'connect_gun',
+            label: 'Try Again',
+            action: 'retry',
             isPrimary: true,
           ));
           break;

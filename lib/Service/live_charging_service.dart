@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/live_charging_model.dart';
 import 'api_endpoints.dart';
@@ -83,7 +84,7 @@ class LiveChargingService {
       print('⏳ Sending request to server...');
       final stopwatch = Stopwatch()..start();
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         uri,
         headers: headers,
       ).timeout(

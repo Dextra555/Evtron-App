@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Model/ev_station_model.dart';
 import '../../Service/api_endpoints.dart';
@@ -13,7 +14,7 @@ class WishlistService {
 
       if (token == null) return;
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(ApiEndpoints.wishlist),
         headers: {
           'Content-Type': 'application/json',
@@ -66,7 +67,7 @@ class WishlistService {
       }
 
       if (isFavorite) {
-        final response = await http.post(
+        final response = await NetworkService.post(
           Uri.parse(ApiEndpoints.wishlist),
           headers: {
             'Content-Type': 'application/json',
@@ -95,7 +96,7 @@ class WishlistService {
           return false;
         }
 
-        final response = await http.delete(
+        final response = await NetworkService.delete(
           Uri.parse('${ApiEndpoints.wishlist}/$wishlistId'),
           headers: {
             'Content-Type': 'application/json',
@@ -127,7 +128,7 @@ class WishlistService {
       if (token == null) return false;
 
       if (addToWishlist) {
-        final response = await http.post(
+        final response = await NetworkService.post(
           Uri.parse(ApiEndpoints.wishlist),
           headers: {
             'Content-Type': 'application/json',
@@ -144,7 +145,7 @@ class WishlistService {
         final wishlistId = await _getWishlistIdForStation(station.id);
         if (wishlistId == null) return false;
 
-        final response = await http.delete(
+        final response = await NetworkService.delete(
           Uri.parse('${ApiEndpoints.wishlist}/$wishlistId'),
           headers: {'Authorization': '${tokenType ?? "Bearer"} $token'},
         );
@@ -168,7 +169,7 @@ class WishlistService {
 
       if (token == null) return null;
 
-      final response = await http.get(
+      final response = await NetworkService.get(
         Uri.parse(ApiEndpoints.wishlist),
         headers: {
           'Content-Type': 'application/json',

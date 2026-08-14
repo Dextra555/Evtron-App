@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:evtron/Service/network_service.dart';
 import '../model/charging_history_model.dart';
 import '../service/charging_history_service.dart';
 
@@ -40,9 +41,13 @@ class ChargingHistoryController extends ChangeNotifier {
         errorMessage = "No charging history found";
       }
 
-    } catch (e) {
-      errorMessage = e.toString();
+    } on NetworkException catch (e) {
+      errorMessage = NetworkService.noInternetMessage;
+      print('❌ Network error in charging history controller: $e');
+    } catch (e, stackTrace) {
+      errorMessage = 'Failed to load charging history. Please try again.';
       print('❌ Error in controller: $e');
+      print(stackTrace);
     } finally {
       isLoading = false;
       notifyListeners();

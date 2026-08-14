@@ -1,5 +1,6 @@
 // lib/Controller/wallet_transaction_controller.dart
 import 'package:flutter/material.dart';
+import 'package:evtron/Service/network_service.dart';
 import '../Model/wallet_model.dart';
 import '../Service/AuthService.dart';
 import '../Service/wallet_service.dart';
@@ -37,9 +38,15 @@ class WalletTransactionController extends ChangeNotifier {
         transactions = [];
         errorMessage = "No transactions found";
       }
-    } catch (e) {
-      errorMessage = "Failed to load transactions: $e";
+    } on NetworkException catch (e) {
+      errorMessage = NetworkService.noInternetMessage;
       transactions = [];
+      print('Wallet transaction network error: $e');
+    } catch (e, stackTrace) {
+      errorMessage = 'Failed to load transactions. Please try again.';
+      transactions = [];
+      print('Wallet transaction error: $e');
+      print(stackTrace);
     } finally {
       isLoading = false;
       notifyListeners();

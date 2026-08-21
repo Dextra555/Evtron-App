@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -35,7 +34,8 @@ class LargeChargerMarker {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    const Size size = Size(100, 160);
+    const Size size = Size(150, 240);
+    canvas.scale(1.5);
 
     Color markerColor;
 
@@ -61,7 +61,6 @@ class LargeChargerMarker {
 
     print('   Marker Color: $markerColor');
 
-    // Shadow
     canvas.drawOval(
       const Rect.fromLTWH(25, 125, 35, 7),
       Paint()
@@ -77,7 +76,6 @@ class LargeChargerMarker {
 
     print('   Box Text: $countText');
 
-    // Box shadow
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(boxX + 1, boxY + 1, boxWidth, boxHeight),
@@ -88,7 +86,6 @@ class LargeChargerMarker {
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
     );
 
-    // White box background
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(boxX, boxY, boxWidth, boxHeight),

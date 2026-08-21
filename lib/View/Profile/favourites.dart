@@ -29,13 +29,8 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
     _loadWishlist();
   }
 
-  Future<void> _loadWishlist() async {
-    await Future.microtask(() {
-      Provider.of<WishlistController>(
-        context,
-        listen: false,
-      ).fetchWishlist();
-    });
+  void _loadWishlist() {
+    context.read<WishlistController>().fetchWishlist();
   }
 
   Future<void> _openInMaps(double latitude, double longitude, String stationName, String fullAddress) async {
@@ -187,7 +182,7 @@ class _FavoriteStationsScreenState extends State<FavoriteStationsScreen> {
                   const SizedBox(height: 20),
                   ElevatedButton(
                     onPressed: () {
-                      controller.fetchWishlist();
+                      controller.refreshWishlist();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Appcolor.green,

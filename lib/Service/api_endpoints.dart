@@ -84,12 +84,10 @@ class ApiEndpoints {
     return '$baseUrl/wallet/receipt/$transactionId';
   }
 
-  // Razorpay endpoints
   static const String createRazorpayOrder = '$baseUrl/wallet/recharge/create-order';
   static const String cancelRazorpayOrder = '$baseUrl/api/wallet/recharge/cancel';
   static const String verifyRazorpayPayment = '$baseUrl/wallet/recharge/verify';
 
-  // Add this to your ApiEndpoints class
   static const String walletTransactions = '$baseUrl/wallet/transactions';
 
   static const String cancelAllPendingOrders = '$baseUrl/wallet/recharge/cancel-all-pending';

@@ -114,19 +114,15 @@ class _SplashScreenState extends State<SplashScreen>
         ),
         child: Stack(
           children: [
-            // Animated particles with EV theme
             _buildParticleSystem(),
 
-            // Animated gradient orbs (EV themed)
             _buildGradientOrbs(),
 
-            // Main content
             SafeArea(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Animated EV Charger icon with rotation
                     AnimatedBuilder(
                       animation: _rotationAnimation,
                       builder: (context, child) {
@@ -135,10 +131,9 @@ class _SplashScreenState extends State<SplashScreen>
                           child: Stack(
                             alignment: Alignment.center,
                             children: [
-                              // Outer ring with battery level indicator
                               Container(
-                                width: 160, // Reduced from 180
-                                height: 160, // Reduced from 180
+                                width: 160,
+                                height: 160,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   gradient: LinearGradient(
@@ -371,7 +366,7 @@ class _SplashScreenState extends State<SplashScreen>
                     Padding(
                       padding: const EdgeInsets.only(bottom: 15),
                       child: Text(
-                        'Evtron v1.20',
+                        'Evtron v1.21',
                         style: TextStyle(
                           fontSize: 10,
                           color: Color(0xFF95A5A6),
@@ -392,10 +387,10 @@ class _SplashScreenState extends State<SplashScreen>
 
   Widget _buildInfoChip(String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), // Reduced from 10, 4
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: Appcolor.green.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(15), // Reduced from 20
+        borderRadius: BorderRadius.circular(15),
         border: Border.all(
           color: Appcolor.green.withOpacity(0.2),
           width: 0.5,
@@ -561,7 +556,7 @@ class ParticlePainter extends CustomPainter {
     final random = Random(42);
     final paint = Paint();
 
-    for (int i = 0; i < 60; i++) { // Reduced from 80
+    for (int i = 0; i < 60; i++) {
       final x = random.nextDouble() * size.width;
       final y = random.nextDouble() * size.height;
       final radius = 1.0 + random.nextDouble() * 1.5; // Reduced from 1.5 + random.nextDouble() * 2

@@ -72,12 +72,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendOtp() async {
-    // Prevent multiple simultaneous requests
     if (_isLoading) {
       return;
     }
 
-    // Debounce - prevent requests within 5 seconds
     if (_lastRequestTime != null) {
       final timeSinceLastRequest = DateTime.now().difference(_lastRequestTime!);
       if (timeSinceLastRequest.inSeconds < 5) {
@@ -88,7 +86,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final phoneNumber = _emailPhoneController.text.trim();
 
-    // Validate phone number
     if (phoneNumber.length != 10) {
       _showError("Please enter a valid 10-digit phone number");
       return;
@@ -109,7 +106,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final result = await _loginController.sendOtp(sendOtpModel);
 
-    // Update last request time
     _lastRequestTime = DateTime.now();
 
     if (mounted) {
@@ -167,52 +163,6 @@ class _LoginScreenState extends State<LoginScreen> {
         duration: const Duration(seconds: 3),
       ),
     );
-  }
-
-  Future<void> _authenticateWithBiometrics() async {
-    if (!_isBiometricAvailable) {
-      _showError("Biometric authentication is not available");
-      return;
-    }
-
-    setState(() {
-      _isBiometricLoading = true;
-    });
-
-    try {
-      final isAuthenticated = await _localAuth.authenticate(
-        localizedReason: 'Verify your identity to access your account',
-        biometricOnly: false,
-      );
-      if (mounted) {
-        if (isAuthenticated) {
-          await SessionManager.setLoggedIn(true);
-          await SessionManager.setUserPhone(_emailPhoneController.text);
-          _showSuccess("Welcome back! Authentication successful!");
-
-          if (mounted) {
-            Future.delayed(const Duration(milliseconds: 500), () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const Homepage()),
-              );
-            });
-          }
-        } else {
-          _showError("Authentication failed. Please try again.");
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        _showError("Authentication error: ${e.toString().split('(')[0]}");
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isBiometricLoading = false;
-        });
-      }
-    }
   }
 
   @override
@@ -501,58 +451,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Widget _buildBiometricButton() {
-  //   return GestureDetector(
-  //     onTap: _isBiometricLoading ? null : _authenticateWithBiometrics,
-  //     child: Container(
-  //       width: double.infinity,
-  //       height: 48,
-  //       decoration: BoxDecoration(
-  //         gradient: LinearGradient(
-  //           colors: [
-  //             _primaryGreen.withOpacity(0.1),
-  //             _lightGreen.withOpacity(0.05),
-  //           ],
-  //         ),
-  //         borderRadius: BorderRadius.circular(14),
-  //         border: Border.all(
-  //           color: _primaryGreen.withOpacity(0.3),
-  //           width: 1,
-  //         ),
-  //       ),
-  //       child: Center(
-  //         child: _isBiometricLoading
-  //             ? SizedBox(
-  //           height: 20,
-  //           width: 20,
-  //           child: CircularProgressIndicator(
-  //             strokeWidth: 2,
-  //             valueColor: AlwaysStoppedAnimation<Color>(_primaryGreen),
-  //           ),
-  //         )
-  //             : Row(
-  //           mainAxisAlignment: MainAxisAlignment.center,
-  //           children: [
-  //             Icon(
-  //               Icons.fingerprint,
-  //               color: _primaryGreen,
-  //               size: 20,
-  //             ),
-  //             const SizedBox(width: 8),
-  //             Text(
-  //               "Use Biometric Login",
-  //               style: GoogleFonts.poppins(
-  //                 color: _primaryGreen,
-  //                 fontSize: 13,
-  //                 fontWeight: FontWeight.w600,
-  //               ),
-  //             ),
-  //           ],
-  //         ),
-  //       ),
-  //     ),
-  //   );
-  // }
 
   Widget _buildSignUpLink() {
     return Row(

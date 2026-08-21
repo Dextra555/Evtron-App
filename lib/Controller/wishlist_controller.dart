@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:evtron/Service/network_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Model/wishlist.dart';
@@ -10,6 +9,12 @@ class WishlistController extends ChangeNotifier {
   bool isLoading = false;
   List<WishlistItem> wishlist = [];
   String errorMessage = '';
+
+  bool _hasLoaded = false;
+  Future<void>? _inFlight;
+
+  /// Whether the wishlist has been successfully loaded at least once.
+  bool get hasLoaded => _hasLoaded;
 
   bool isStationInWishlist(int stationId) {
     return wishlist.any((item) => item.station.id == stationId);
@@ -24,7 +29,32 @@ class WishlistController extends ChangeNotifier {
     }
   }
 
+  /// Fetches the wishlist, but reuses already-loaded data so reopening the
+  /// Favourite page displays instantly without an unnecessary API call.
   Future<void> fetchWishlist() async {
+    if (_hasLoaded) return;
+    await _fetch();
+  }
+
+  Future<void> _fetch() async {
+    final inFlight = _inFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+
+    final future = _doFetchWishlist();
+    _inFlight = future;
+    try {
+      await future;
+    } finally {
+      if (_inFlight == future) {
+        _inFlight = null;
+      }
+    }
+  }
+
+  Future<void> _doFetchWishlist() async {
     try {
       isLoading = true;
       errorMessage = '';
@@ -36,8 +66,6 @@ class WishlistController extends ChangeNotifier {
 
       if (token == null) {
         errorMessage = "Please login to view wishlist";
-        isLoading = false;
-        notifyListeners();
         return;
       }
 
@@ -59,6 +87,7 @@ class WishlistController extends ChangeNotifier {
         final jsonData = jsonDecode(response.body);
         WishlistResponse wishlistResponse = WishlistResponse.fromJson(jsonData);
         wishlist = wishlistResponse.data;
+        _hasLoaded = true;
       } else if (response.statusCode == 401) {
         errorMessage = "Session expired. Please login again.";
       } else {
@@ -165,7 +194,7 @@ class WishlistController extends ChangeNotifier {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          await fetchWishlist(); // Refresh the list
+          await refreshWishlist(); // Refresh the list
           return true;
         }
       }
@@ -181,8 +210,10 @@ class WishlistController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Always fetches the wishlist from the API, even when data is already
+  /// cached. Used for retry and after explicit add/remove actions.
   Future<void> refreshWishlist() async {
-    await fetchWishlist();
+    await _fetch();
   }
 }
 

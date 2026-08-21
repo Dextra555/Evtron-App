@@ -469,7 +469,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
-  }) {
+  })
+  {
     return ListTile(
       leading: Icon(
         icon,
@@ -525,7 +526,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildVersionText() {
     return Center(
       child: Text(
-        'Version 1.20',
+        'Version 1.21',
         style: TextStyle(
           fontSize: 12,
           color: widget.isDarkMode ? Colors.grey[600] : Colors.grey[400],

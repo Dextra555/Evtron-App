@@ -40,6 +40,13 @@ class LoginController {
         };
       }
 
+      if (response.statusCode >= 500) {
+        return {
+          "success": false,
+          "message": "Server error. Please try again later.",
+        };
+      }
+
       if (response.statusCode == 200 || response.statusCode == 201) {
 
         String otp = data['otp']?.toString() ?? '';
